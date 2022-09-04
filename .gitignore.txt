@@ -1,17 +1,20 @@
-#papers
+# papers
 papers/
 
-#data
+# data
 data/
 
-#experiments
+# experiments
 exp/
 
-#jupyternotebook files
+# jupyternotebook files
 *.ipynb
 
-#ppt
+# ppt
 /ppt
 
-#__pycache__
+# __pycache__
 /main/__pycache__
+
+# results
+results/ 
