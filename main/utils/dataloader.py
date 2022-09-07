@@ -11,7 +11,7 @@ import os
 import sys
 
 class TableDataset(Dataset):
-    """
+    r"""
     Table dataset
 
     # Parameters
@@ -43,8 +43,76 @@ class TableDataset(Dataset):
     def __len__(self):
         return len(self.X)
 
+class BipartiteData(Dataset): 
+    r"""
+    Bipartite dataset
+
+    # Parameters
+    x: input tableau data with missing values (float tensor type)
+    x_comp: complete matrix of x (float tensor type)
+    y: independent variable (target variable: long or float type)
+    edge_index: edge indices (coo-type)
+    """ 
+    def __init__(self, x, x_comp, y, edge_index= None): 
+        
+        super().__init__()
+        # data
+        self.x, self.y = torch.FloatTensor(x), torch.FloatTensor(y)
+        self.x_comp = torch.FloatTensor(x_comp)
+
+        # nodes in a bipartite graph
+        n, p = x.shape
+        x_src = torch.arange(n)
+        x_dst = torch.arange(p)
+        self.x_src = x_src 
+        self.x_dst = x_dst
+
+        # edges in a bipartite graph
+        self.mask = ~torch.isnan(self.x) # 1 if not missing else 0
+        if edge_index is None:
+            self.edge_index =  torch.nonzero(self.mask).T
+        else: 
+            self.edge_index = edge_index  
+        self.edge_value = self.x[self.mask]
+        self.mask = self.mask * 1.
+        
+    def __len__(self): 
+        return self.x.shape[0]
+
+    def __getitem__(self, idx):
+        # returns 
+        # edges, nodes
+        return {
+            'x': self.x[idx], 
+            'y': self.y[idx],
+            'x_complete': self.x_comp[idx],
+            'mask': self.mask[idx],
+            'row_index': self.edge_index[0][idx],
+            'col_index': self.edge_index[1][idx], 
+            'edge_value': self.edge_value[idx]
+        }
+
+def collate_fn(samples): 
+    r"""
+    collate function of a bipartite dataset
+    """     
+    xs = [sample['x'] for sample in samples]
+    ys = [sample['y'] for sample in samples]
+    ms = [sample['mask'] for sample in samples]
+    x_comps = [sample['x_complete'] for sample in samples]
+    edge_values = [sample['edge_value'] for sample in samples]
+    edge_index = torch.tensor([[sample['row_index'],sample['col_index']] for sample in samples]).T
+    return {
+            'x': torch.stack(xs).contiguous(), 
+            'y': torch.stack(ys).contiguous(),
+            'mask': torch.stack(ms).contiguous(),
+            'x_complete': torch.stack(x_comps).contiguous(),
+            'edge_index': edge_index.contiguous(),
+            'edge_value': torch.stack(edge_values).contiguous()       
+    }
+
 def make_mask(x_batch):
-    """
+    r"""
     A fucntion to make a mask matrix
 
     # Parameter
@@ -57,7 +125,7 @@ def make_mask(x_batch):
     return mask
 
 def train_valid_test_split(args, X, y, task_type= "cls"):
-    """
+    r"""
     A fuction to train-validation-test split
 
     # Parameter
@@ -122,7 +190,7 @@ def train_valid_test_split(args, X, y, task_type= "cls"):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_gestures(args):
-    """
+    r"""
     A function to load gestures-data.
     
     # Parameters
@@ -165,7 +233,7 @@ def load_gestures(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_elec(args):
-    """
+    r"""
     A function to load elec-data.
     
     # Parameters
@@ -199,7 +267,7 @@ def load_elec(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde 
 
 def load_wind_turbin_power(args):
-    """
+    r"""
     A function to load wind-turbin-data.
     
     # Parameters
@@ -227,7 +295,7 @@ def load_wind_turbin_power(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde       
 
 def load_mobile(args):
-    """
+    r"""
     A function to load mobile-price-prediction-data.
     
     # Parameters
@@ -261,7 +329,7 @@ def load_mobile(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_wine(args):
-    """
+    r"""
     A function to load wine-data.
     
     # Parameters
@@ -292,7 +360,7 @@ def load_wine(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_appliances(args):
-    """
+    r"""
     A function to load appliances-data.
     
     # Parameters
@@ -319,7 +387,7 @@ def load_appliances(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_pulsar(args):
-    """
+    r"""
     A function to load pulsar-data.
     
     # Parameters
@@ -350,7 +418,7 @@ def load_pulsar(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_faults(args):
-    """
+    r"""
     A function to load faults-data.
     
     # Parameters
@@ -390,7 +458,7 @@ def load_faults(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_abalone(args):
-    """
+    r"""
     A function to load abalone-data.
     
     # Parameters
@@ -424,7 +492,7 @@ def load_abalone(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_spam(args):
-    """
+    r"""
     A function to load spam-data.
     
     # Parameters
@@ -453,7 +521,7 @@ def load_spam(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_breast(args):
-    """
+    r"""
     A function to load breast-data.
     
     # Parameters
@@ -489,7 +557,7 @@ def load_breast(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_letter(args):
-    """
+    r"""
     A function to load letter-data.
     
     # Parameters
@@ -524,7 +592,7 @@ def load_letter(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_eeg(args):
-    """
+    r"""
     A function to load eeg-data.
     
     # Parameters
@@ -553,7 +621,7 @@ def load_eeg(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_recipes(args):
-    """
+    r"""
     A function to load recipes-data.
     
     # Parameters
@@ -587,7 +655,7 @@ def load_recipes(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_stroke(args):
-    """
+    r"""
     A function to load stroke-data.
     
     # Parameters
@@ -624,7 +692,7 @@ def load_stroke(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_simul(args):
-    """
+    r"""
     A function to load simul-data.
     
     # Parameters
@@ -655,7 +723,7 @@ def load_simul(args):
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_bench(args):
-    """
+    r"""
     A function to load bench-data.
     
     # Parameters
