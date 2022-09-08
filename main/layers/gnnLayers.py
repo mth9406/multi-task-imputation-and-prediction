@@ -20,17 +20,17 @@ class Init(object):
         return self.const_vector.repeat((batch_size,1)), self.onehot_vector
 
 class GCNBlock(nn.Module):
-    def __init__(self, node_emb_size, edge_emb_size, msg_emb_size):
+    def __init__(self, in_node_emb_size, out_node_emb_size, in_edge_emb_size, out_edge_emb_size, msg_emb_size):
         super().__init__()
         
         # define trainable parameters
-        self.P = nn.Parameter(torch.randn(size= (node_emb_size+edge_emb_size, msg_emb_size), requires_grad= True)) # for msg
-        self.Q = nn.Parameter(torch.randn(size= (node_emb_size+msg_emb_size, node_emb_size), requires_grad= True)) # for node update
-        self.W = nn.Parameter(torch.randn(size= (edge_emb_size+node_emb_size+node_emb_size, edge_emb_size), requires_grad= True)) # for edge update
+        self.P = nn.Parameter(torch.randn(size= (in_node_emb_size+in_edge_emb_size, msg_emb_size), requires_grad= True)) # for msg
+        self.Q = nn.Parameter(torch.randn(size= (in_node_emb_size+msg_emb_size, out_node_emb_size), requires_grad= True)) # for node update
+        self.W = nn.Parameter(torch.randn(size= (in_edge_emb_size+out_node_emb_size+out_node_emb_size, out_edge_emb_size), requires_grad= True)) # for edge update
         self.init_params()
         self.b_P = nn.Parameter(torch.zeros(size= (msg_emb_size, ), requires_grad= True))
-        self.b_Q = nn.Parameter(torch.zeros(size= (node_emb_size, ), requires_grad= True))
-        self.b_W = nn.Parameter(torch.zeros(size= (edge_emb_size, ), requires_grad= True))
+        self.b_Q = nn.Parameter(torch.zeros(size= (out_node_emb_size, ), requires_grad= True))
+        self.b_W = nn.Parameter(torch.zeros(size= (out_edge_emb_size, ), requires_grad= True))
 
     def init_params(self): 
         nn.init.xavier_normal_(self.P)
