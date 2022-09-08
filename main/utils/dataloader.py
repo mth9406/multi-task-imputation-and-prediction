@@ -87,9 +87,9 @@ class BipartiteData(Dataset):
             'y': self.y[idx],
             'x_complete': self.x_comp[idx],
             'mask': self.mask[idx],
-            'row_index': self.edge_index[0][idx],
-            'col_index': self.edge_index[1][idx], 
-            'edge_value': self.edge_value[idx]
+            'row_index': self.edge_index[0][self.edge_index[0] == idx],
+            'col_index': self.edge_index[1][self.edge_index[0] == idx], 
+            'edge_value': self.edge_value[self.edge_index[0] == idx]
         }
 
 def collate_fn(samples): 
@@ -100,8 +100,8 @@ def collate_fn(samples):
     ys = [sample['y'] for sample in samples]
     ms = [sample['mask'] for sample in samples]
     x_comps = [sample['x_complete'] for sample in samples]
-    edge_values = [sample['edge_value'] for sample in samples]
-    edge_index = torch.tensor([[sample['row_index'],sample['col_index']] for sample in samples]).T
+    edge_values = [sample_value for sample in samples for sample_value in sample['edge_value']]
+    edge_index = torch.tensor([[i, col] for i, sample in enumerate(samples) for row, col in zip(sample['row_index'], sample['col_index'])]).T
     return {
             'x': torch.stack(xs).contiguous(), 
             'y': torch.stack(ys).contiguous(),
