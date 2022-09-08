@@ -13,7 +13,7 @@ class Trainer:
     def __init__(self):
         super().__init__()
 
-    def __call__(args, model, train_loader, valid_loader, early_stopping, optimizer, device):
+    def __call__(self, args, model, train_loader, valid_loader, early_stopping, optimizer, device):
         num_batches = len(train_loader)
         # # to store losses per epoch
         # tr_loss, valid_loss = 0, 0 # todo
@@ -39,27 +39,23 @@ class Trainer:
                     = batch['x'].to(device), batch['y'].to(device), batch['edge_index'].to(device), batch['edge_value'].to(device)
                 batch['x_complete'], batch['mask'] = batch['x_complete'].to(device), batch['mask'].to(device) 
                 model.eval()
-                valid_loss = model.valid_step(batch)
+                valid_loss = model.val_step(batch)
                 
             # save current loss values
             # todo 
 
-            training_loss = tr_loss['total_loss'].item().detach().cpu()
-            validation_loss = valid_loss['total_loss'].item().detach().cpu()
+            training_loss = tr_loss['total_loss'].detach().cpu().item()
+            validation_loss = valid_loss['total_loss'].detach().cpu().item()
             print(f'Epoch [{epoch+1}/{args.epoch}]: training loss= {training_loss:.6f}, validation loss= {validation_loss:.6f}')
             early_stopping(validation_loss, model, epoch, optimizer)
 
             if early_stopping.early_stop:
                 break     
     
-    def test(args, model, test_loader, device, perf_measure= None):
+    def test(self, args, model, test_loader, device, perf_measure= None):
         
         # initiate performance.
-        perfs = {
-                'imp_loss': [],
-                'label_loss': [],
-                'total_loss': []
-            }        
+        perfs = {}        
         if perf_measure is not None:
             for perf in perf_measure: 
                 perfs[perf] = []
@@ -71,7 +67,7 @@ class Trainer:
                 = batch['x'].to(device), batch['y'].to(device), batch['edge_index'].to(device), batch['edge_value'].to(device)
             batch['x_complete'], batch['mask'] = batch['x_complete'].to(device), batch['mask'].to(device) 
             model.eval() 
-            loss = model.test_step()
+            loss = model.test_step(batch)
             for k, v in loss.items(): 
                 if perfs.get(k) is None: 
                     perfs[k] = []

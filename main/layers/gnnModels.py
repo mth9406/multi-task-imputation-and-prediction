@@ -51,17 +51,25 @@ class Grape(nn.Module):
         self.device = device
 
     def forward(self, x):
-        edge_index = x['edge_index']
-        edge_emb = x['edge_value'][:, None]
+        if self.training:
+            edge_index, edge_emb = dropout_adj(x['edge_index'], x['edge_value'])
+        else: 
+            edge_index, edge_emb = x['edge_index'], x['edge_value']
+        edge_emb = edge_emb[:, None]
         node_emb, feature_emb = self.init(x['x'].shape[0])
 
-        for i in range(self.num_layers):
+        node_emb, edge_emb, feature_emb = self.gcn_block0(node_emb, edge_emb, feature_emb, edge_index)
+        node_emb, edge_emb, feature_emb = torch.relu(node_emb), torch.relu(edge_emb), torch.relu(feature_emb)
+
+        for i in range(1, self.num_layers):
             node_emb_b4, edge_emb_b4, feature_emb_b4 = node_emb.clone().detach(), edge_emb.clone().detach(), feature_emb.clone().detach()
             node_emb, edge_emb, feature_emb = getattr(self, f'gcn_block{i}')(node_emb, edge_emb, feature_emb, edge_index)
             node_emb, edge_emb, feature_emb \
                 = torch.relu(node_emb+node_emb_b4), torch.relu(edge_emb+edge_emb_b4), torch.relu(feature_emb+feature_emb_b4)
         
         d_hat = self.eph(node_emb, feature_emb)
+        if len(self.cat_vars_pos) > 0: 
+            d_hat[:, self.cat_vars_pos] = torch.sigmoid(d_hat[:, self.cat_vars_pos]) 
         y_hat = self.nph(d_hat)
 
         return {
@@ -76,7 +84,7 @@ class Grape(nn.Module):
         out = self.forward(batch)
         mse_loss = nn.MSELoss()
         cls_loss = nn.CrossEntropyLoss()
-        bce_loss = nn.BCEWithLogitsLoss()
+        bce_loss = nn.BCELoss()
 
         if self.num_labels == 1: 
             label_loss = mse_loss(out['preds'], batch['y'])
@@ -111,7 +119,7 @@ class Grape(nn.Module):
         out = self.forward(batch)
         mse_loss = nn.MSELoss()
         cls_loss = nn.CrossEntropyLoss()
-        bce_loss = nn.BCEWithLogitsLoss()
+        bce_loss = nn.BCELoss()
 
         if self.num_labels == 1: 
             label_loss = mse_loss(out['preds'], batch['y'])
@@ -148,7 +156,7 @@ class Grape(nn.Module):
         out = self.forward(batch)
         mse_loss = nn.MSELoss()
         cls_loss = nn.CrossEntropyLoss()
-        bce_loss = nn.BCEWithLogitsLoss()
+        bce_loss = nn.BCELoss()
 
         if self.num_labels == 1: 
             label_loss = mse_loss(out['preds'], batch['y'])

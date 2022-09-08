@@ -57,9 +57,9 @@ class BipartiteData(Dataset):
         
         super().__init__()
         # data
-        self.x, self.y = torch.FloatTensor(x), torch.FloatTensor(y)
-        self.x_comp = torch.FloatTensor(x_comp)
-
+        self.x, self.y = x, y
+        self.x_comp = x_comp
+        
         # nodes in a bipartite graph
         n, p = x.shape
         x_src = torch.arange(n)
@@ -153,16 +153,21 @@ def train_valid_test_split(args, X, y, task_type= "cls"):
     X_valid, y_valid = X.values[idx[si_val:si_te],:], y.values[idx[si_val:si_te], ]
     X_test, y_test = X.values[idx[si_te:], :], y.values[idx[si_te:], ]
 
+    if len(args.cat_vars_pos) == 0: 
+        args.numeric_vars_pos = [i for i in range(p)]
+    else: 
+        tot_features = list(range(p))
+        numeric_vars_pos = list(set(tot_features)-set(args.cat_vars_pos))       
+        args.numeric_vars_pos = numeric_vars_pos 
+
     if args.standardize: 
-        if args.cat_features is None:
+        if len(args.cat_vars_pos) == 0:
             X_train, cache = min_max_scaler(X_train)
             X_valid, X_test = min_max_scaler_test(X_valid, cache), min_max_scaler_test(X_test, cache)
         else: 
-            tot_features = list(range(p))
-            num_features = list(set(tot_features)-set(args.cat_features))
-            X_train[:, num_features], cache = min_max_scaler(X_train[:, num_features])
-            X_valid[:, num_features], X_test[:, num_features]\
-                 = min_max_scaler_test(X_valid[:, num_features], cache), min_max_scaler_test(X_test[:, num_features], cache)
+            X_train[:, numeric_vars_pos], cache = min_max_scaler(X_train[:, numeric_vars_pos])
+            X_valid[:, numeric_vars_pos], X_test[:, numeric_vars_pos]\
+                 = min_max_scaler_test(X_valid[:, numeric_vars_pos], cache), min_max_scaler_test(X_test[:, numeric_vars_pos], cache)
         if task_type == 'regr': 
             y_train, cache = min_max_scaler(y_train) 
             y_test = min_max_scaler_test(y_test, cache)
@@ -311,13 +316,13 @@ def load_mobile(args):
     data_file = os.path.join(args.data_path, 'train.csv')
     data = pd.read_csv(data_file)
     X, y = data.iloc[:, :-1], data.iloc[:, -1]
-    cat_features = ['blue', 'dual_sim', 'four_g', 'three_g', 'touch_screen', 'wifi']
-    X_cat = X[cat_features]
-    num_features = list(set(X.columns)-set(cat_features))
-    X_num = X[num_features]
+    cat_vars_pos = ['blue', 'dual_sim', 'four_g', 'three_g', 'touch_screen', 'wifi']
+    X_cat = X[cat_vars_pos]
+    numeric_vars_pos = list(set(X.columns)-set(cat_vars_pos))
+    X_num = X[numeric_vars_pos]
     X = pd.concat([X_cat,X_num], axis= 1)
 
-    args.cat_features = list(range(X_cat.shape[1]))
+    args.cat_vars_pos = list(range(X_cat.shape[1]))
     args.input_size = X.shape[1]
     args.n_labels = 4
 
@@ -410,6 +415,7 @@ def load_pulsar(args):
 
     args.input_size = X.shape[1]
     args.n_labels = 2
+    args.cat_vars_pos = []
     print(data.info())
     print('-'*20)
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
@@ -449,6 +455,7 @@ def load_faults(args):
 
     args.input_size = X.shape[1] 
     args.n_labels = 7
+    args.cat_vars_pos = []
 
     print(data.info())
     print('-'*20)
@@ -479,7 +486,7 @@ def load_abalone(args):
     dummies = pd.get_dummies(data.iloc[:, 0], drop_first= True)
     X = pd.concat([dummies, X], axis= 1)
 
-    args.cat_features = list(range(dummies.shape[1]))
+    args.cat_vars_pos = list(range(dummies.shape[1]))
     args.input_size = X.shape[1]
     args.n_labels = 1
 
@@ -549,6 +556,7 @@ def load_breast(args):
     
     args.input_size = X.shape[1]
     args.n_labels = 2
+    args.cat_vars_pos = []
     print(data.info())
     print('-'*20)
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
@@ -642,7 +650,7 @@ def load_recipes(args):
     # dummies = pd.get_dummies(data.iloc[:, 0], drop_first= True)
     # X = pd.concat([dummies, X], axis= 1)
 
-    args.cat_features = list(range(4, X.shape[1]))
+    args.cat_vars_pos = list(range(4, X.shape[1]))
     args.input_size = X.shape[1]
     args.n_labels = 1
 
@@ -679,7 +687,7 @@ def load_stroke(args):
     X_cat = pd.get_dummies(X_cat, drop_first= True)
     X = pd.concat([X_cat, X_num], axis= 1)
 
-    args.cat_features = list(range(13))
+    args.cat_vars_pos = list(range(13))
     args.input_size = X.shape[1]
     args.n_labels = 2
 
@@ -710,7 +718,7 @@ def load_simul(args):
     y = pd.read_csv(target_file).iloc[:, -1]
     X = pd.read_csv(var_file)
 
-    args.cat_features = None
+    args.cat_vars_pos = []
     args.input_size = X.shape[1]
     args.n_labels = 2
 
@@ -750,7 +758,7 @@ def load_bench(args):
     X_cat = pd.get_dummies(X_cat, drop_first= True)
     X = pd.concat([X_cat, X_num], axis= 1)
 
-    args.cat_features = list(range(4))
+    args.cat_vars_pos = list(range(4))
     args.input_size = X.shape[1]
     args.n_labels = 1
 

@@ -59,11 +59,11 @@ def train(args,
             # model.eval()
             loss = 0
             with torch.no_grad():
-                out = model(x, cat_features= args.cat_features)
+                out = model(x, cat_features= args.cat_vars_pos)
                 if out['preds'] is not None:
                     loss = criterion(out['preds'], x['label'])
                 if out['imputation'] is not None:
-                    loss_imp, _ = get_loss_imp(x['input'], out['imputation'], x['mask'], cat_features= args.cat_features)
+                    loss_imp, _ = get_loss_imp(x['input'], out['imputation'], x['mask'], cat_features= args.cat_vars_pos)
                     loss += args.imp_loss_penalty * loss_imp
                 if out['regularization_loss'] is not None: 
                     loss += args.imp_loss_penalty * out['regularization_loss']
@@ -100,13 +100,13 @@ def train_batch(args, x, model, criterion, optimizer):
     loss = 0
     # feed forward
     with torch.set_grad_enabled(True):
-        out = model(x, cat_features= args.cat_features)
+        out = model(x, cat_features= args.cat_vars_pos)
         # prediction loss
         if out['preds'] is not None:
             loss += criterion(out['preds'], x['label'])
         if out['imputation'] is not None: 
             mask = (x['mask']==1).to(x['mask'].device) * 1. 
-            loss_imp, _ = get_loss_imp(x['input'], out['imputation'], mask, cat_features= args.cat_features)
+            loss_imp, _ = get_loss_imp(x['input'], out['imputation'], mask, cat_features= args.cat_vars_pos)
             loss += loss_imp
         if out['regularization_loss'] is not None: 
             loss += out['regularization_loss']
@@ -160,9 +160,9 @@ def train_batch_by_cols(args, x, model, criterion, optimizer):
             # obtain imputation loss w.r.t. j'th column and reconstruction loss for else where.
             # the loss is calculated only for 
             # x['mask'] == 1 
-            out = model(x_tilde, cat_features= args.cat_features)
+            out = model(x_tilde, cat_features= args.cat_vars_pos)
             mask = (x['mask']==1).to(x['mask'].device) * 1. 
-            loss_imp, _ = get_loss_imp(x['input'], out['imputation'], mask, cat_features= args.cat_features)
+            loss_imp, _ = get_loss_imp(x['input'], out['imputation'], mask, cat_features= args.cat_vars_pos)
             loss += args.imp_loss_penalty * loss_imp
             if out['regularization_loss'] is not None: 
                 loss += args.imp_loss_penalty * out['regularization_loss']
@@ -206,8 +206,8 @@ def test_cls(args,
         model.eval()
         loss = 0
         with torch.no_grad():
-            out = model(x, numobs= args.vai_n_samples, cat_features= args.cat_features)
-            loss_imp_num, loss_imp_cat = get_loss_imp(x['input'], out['imputation'], x['mask'], cat_features= args.cat_features, test= True)
+            out = model(x, numobs= args.vai_n_samples, cat_features= args.cat_vars_pos)
+            loss_imp_num, loss_imp_cat = get_loss_imp(x['input'], out['imputation'], x['mask'], cat_features= args.cat_vars_pos, test= True)
             if args.model_type != 'ipv':
                 preds = torch.argmax(F.softmax(out['preds'], dim=1), dim=1)
             else: 
@@ -221,7 +221,7 @@ def test_cls(args,
             #     loss_reg += args.imp_loss_penalty * out['regularization_loss']
             # tot_loss = loss + args.imp_loss_penalty * loss_imp + loss_reg
             if x['complete_input'] is not None: 
-                l1, l2 = get_loss_imp(x['complete_input'], out['imputation'], 1-x['mask'], cat_features= args.cat_features, test=True)
+                l1, l2 = get_loss_imp(x['complete_input'], out['imputation'], 1-x['mask'], cat_features= args.cat_vars_pos, test=True)
                 imp_pred_loss_num += l1
                 imp_pred_loss_cat += l2
         # loss  
@@ -298,15 +298,15 @@ def test_regr(args,
         imp_pred_loss_num = 0
         imp_pred_loss_cat = 0
         with torch.no_grad():
-            out = model(x, cat_features= args.cat_features)
-            loss_imp, _ = get_loss_imp(x['input'], out['imputation'], x['mask'], cat_features= args.cat_features)
+            out = model(x, cat_features= args.cat_vars_pos)
+            loss_imp, _ = get_loss_imp(x['input'], out['imputation'], x['mask'], cat_features= args.cat_vars_pos)
             loss = criterion(out['preds'], x['label'])
             loss_reg = 0. 
             if out['regularization_loss'] is not None: 
                 loss_reg += args.imp_loss_penalty * out['regularization_loss']
             tot_loss = loss + args.imp_loss_penalty * loss_imp + loss_reg
             if x['complete_input'] is not None: 
-                l1, l2 = get_loss_imp(x['complete_input'], out['imputation'], 1-x['mask'], cat_features= args.cat_features, test= True)        
+                l1, l2 = get_loss_imp(x['complete_input'], out['imputation'], 1-x['mask'], cat_features= args.cat_vars_pos, test= True)        
                 imp_pred_loss_num += l1 
                 imp_pred_loss_cat += l2
         te_loss_imp += loss_imp.detach().cpu().numpy()
@@ -372,15 +372,15 @@ def test_imp(args,
         imp_pred_loss_num = 0
         imp_pred_loss_cat = 0
         with torch.no_grad():
-            out = model(x, cat_features= args.cat_features)
-            loss_imp, _ = get_loss_imp(x['input'], out['imputation'], x['mask'], cat_features= args.cat_features)
+            out = model(x, cat_features= args.cat_vars_pos)
+            loss_imp, _ = get_loss_imp(x['input'], out['imputation'], x['mask'], cat_features= args.cat_vars_pos)
             loss = criterion(out['preds'], x['label'])
             loss_reg = 0. 
             if out['regularization_loss'] is not None: 
                 loss_reg += args.imp_loss_penalty * out['regularization_loss']
             tot_loss = loss + args.imp_loss_penalty * loss_imp + loss_reg
             if x['complete_input'] is not None: 
-                l1, l2 = get_loss_imp(x['complete_input'], out['imputation'], 1-x['mask'], cat_features= args.cat_features, test= True)        
+                l1, l2 = get_loss_imp(x['complete_input'], out['imputation'], 1-x['mask'], cat_features= args.cat_vars_pos, test= True)        
                 imp_pred_loss_num += l1 
                 imp_pred_loss_cat += l2
         te_loss_imp += loss_imp.detach().cpu().numpy()

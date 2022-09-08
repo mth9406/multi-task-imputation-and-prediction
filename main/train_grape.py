@@ -38,8 +38,8 @@ parser.add_argument('--test_all_missing', action= 'store_true',
                 help= 'force every observation in the test data to have missing values.')
 parser.add_argument('--test_n_missing', type= int, default= 1, 
                 help= 'the number of missing values to generate by row. (default= 1)')
-parser.add_argument("--cat_features", nargs="+", default= None, 
-                help= 'the indices of categorical features (list type, default= None)')
+# parser.add_argument("--cat_features", nargs="+", default= None, 
+#                 help= 'the indices of categorical features (list type, default= None)')
 
 # Training options
 parser.add_argument('--batch_size', type=int, default=32, help='input batch size')
@@ -54,8 +54,16 @@ parser.add_argument('--imp_loss_penalty', type= float, default= 1.0,
 # model options
 parser.add_argument('--model_path', type= str, default= './data/gesture/model',
                     help= 'a path to (save) the model')
-parser.add_argument('--drop_p', type= float, default= 0.5,
-                    help= 'dropout ratio (default= 0.5)')
+parser.add_argument('--num_layers', type= int, default= 3, 
+                    help= 'the number of gcn layers')
+parser.add_argument('--node_emb_size', type= int, default= 64,
+                    help= 'the size of node embedding')
+parser.add_argument('--edge_emb_size', type= int, default= 64,
+                    help= 'the size of edge embedding')
+parser.add_argument('--msg_emb_size', type= int, default= 64,
+                    help= 'the size of message embedding')
+parser.add_argument('--edge_drop_p', type= float, default= 0.3,
+                    help= 'dropout ratio (default= 0.3)')
 
 # To test
 parser.add_argument('--test', action='store_true', help='test')
@@ -75,15 +83,20 @@ print(args)
 # device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def main(args): 
+if not os.path.exists(args.model_path): 
+    print('Making a path to save the model...')
+    os.makedirs(args.model_path, exist_ok= True)
+else:
+    print("The path already exists, skip making the path...")
 
-    # model
-    if args.model_type == 'grape':
-        model = Grape(args.input_size, args.n_labels, args.drop_p, stack_fc_lyrs=args.stack_fc_lyrs).to(device)
-        # args.cat_features = None
-    else:
-        print("The model is yet to be implemented.")
-        sys.exit()    
+# make a path to save a model 
+if not os.path.exists(args.test_results_path):
+    print("Making a path to save the results...")
+    os.makedirs(args.test_results_path, exist_ok= True)
+else:
+    print("The path already exists, skip making the path...")
+    
+def main(args): 
 
     # load data
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde, task_type \
@@ -97,6 +110,26 @@ def main(args):
         = DataLoader(train_data, batch_size = args.batch_size, shuffle = True, collate_fn= collate_fn),\
             DataLoader(valid_data, batch_size = args.batch_size, shuffle = True, collate_fn= collate_fn),\
             DataLoader(test_data, batch_size = args.batch_size, shuffle = False, collate_fn= collate_fn)    
+    
+    # model
+    # input_size(=num_features), num_labels(n_labels), cat_vars_pos, numeric_vars_pos are obtaiend after loading the data
+    if args.model_type == 'grape':
+        model = Grape(
+            args.input_size, 
+            args.n_labels,
+            args.cat_vars_pos,
+            args.numeric_vars_pos, 
+            args.num_layers, 
+            args.node_emb_size,
+            args.edge_emb_size, 
+            args.msg_emb_size, 
+            args.edge_drop_p, 
+            device= device
+            ).to(device)
+        # args.cat_features = None
+    else:
+        print("The model is yet to be implemented.")
+        sys.exit()    
 
     optimizer = optim.Adam(model.parameters(), args.lr)    
     early_stopping = EarlyStopping(
@@ -120,8 +153,11 @@ def main(args):
     
     print("==============================================")
     print("Testing the model...")   
-    perfs = trainer.test(model, test_loader, device)
+    perfs = trainer.test(args, model, test_loader, device)
     for k, perf in perfs.items(): 
         print(f'{k}: {perf}')
         
     return perfs
+
+if __name__ == '__main__': 
+    perf = main(args)
