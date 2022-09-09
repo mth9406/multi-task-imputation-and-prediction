@@ -1,19 +1,26 @@
-from mimetypes import init
 import torch 
 from torch import nn
 from torch.nn import functional as F
 from layers.gnnLayers import *
-from torch_geometric.nn import (
-    SAGEConv,
-    Aggregation,
-    MeanAggregation,
-    MaxAggregation,
-    SumAggregation,
-    StdAggregation,
-    VarAggregation,
-    MultiAggregation,
-    SoftmaxAggregation,
-)
+
+import numpy as np
+from sklearn.metrics import r2_score
+from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import mean_squared_error
+from sklearn.metrics import confusion_matrix
+from utils.utils import evaluate
+
+# from torch_geometric.nn import (
+#     SAGEConv,
+#     Aggregation,
+#     MeanAggregation,
+#     MaxAggregation,
+#     SumAggregation,
+#     StdAggregation,
+#     VarAggregation,
+#     MultiAggregation,
+#     SoftmaxAggregation,
+# )
 from torch_geometric.utils import dropout_adj
 
 # Sample model 
@@ -70,10 +77,14 @@ class Grape(nn.Module):
         d_hat = self.eph(node_emb, feature_emb)
         if len(self.cat_vars_pos) > 0: 
             d_hat[:, self.cat_vars_pos] = torch.sigmoid(d_hat[:, self.cat_vars_pos]) 
-        y_hat = self.nph(d_hat)
+
+        d_hat_adj = d_hat.clone().detach()
+        d_hat_adj[x['mask']==1] = x['x'][x['mask'] == 1]
+        y_hat = self.nph(d_hat_adj)
 
         return {
             'x_imputed': d_hat,
+            'x_impted_adj': d_hat_adj,
             'preds': y_hat
         }
 
@@ -106,6 +117,7 @@ class Grape(nn.Module):
 
         return {
             'x_imputed': out.get('x_imputed'),
+            'x_impted_adj': out.get('x_imputed_adj'),
             'preds': out.get('preds'),
             'cat_imp_loss': cat_imp_loss,
             'num_imp_loss': num_imp_loss,
@@ -141,6 +153,7 @@ class Grape(nn.Module):
 
         return {
             'x_imputed': out.get('x_imputed'),
+            'x_impted_adj': out.get('x_imputed_adj'),
             'preds': out.get('preds'),
             'cat_imp_loss': cat_imp_loss,
             'num_imp_loss': num_imp_loss,
@@ -168,27 +181,57 @@ class Grape(nn.Module):
         if len(self.cat_vars_pos) > 0:
             num_imp_loss = mse_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
             total_loss += num_imp_loss
+            num_imp_loss = num_imp_loss.detach().cpu().numpy()
         else: 
             num_imp_loss = float('nan')
         if len(self.numeric_vars_pos) > 0: 
             cat_imp_loss = bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
             total_loss += cat_imp_loss
+            cat_imp_loss = cat_imp_loss.detach().cpu().numpy()
         else: 
             cat_imp_loss = float('nan')
 
+        total_loss = total_loss.detach().cpu().numpy()
+        label_loss = label_loss.detach().cpu().numpy()
+        y = batch['y'].detach().cpu().numpy()
         # if regression:
         # return r2-score, mae and mse 
-
+        if self.num_labels == 1:
+            preds = out['preds'].detach().cpu().numpy()
+            r2 = r2_score(y, preds)
+            mae = mean_absolute_error(y, preds) 
+            mse = mean_squared_error(y, preds)
+            return {
+            #     'x_imputed': out.get('x_imputed'),
+            #     'x_impted_adj': out.get('x_imputed_adj'),
+            #     'preds': out.get('preds'),
+                'cat_imp_loss': cat_imp_loss,
+                'num_imp_loss': num_imp_loss,
+                'label_loss': label_loss,
+                'total_loss': total_loss,
+                'r2':r2,
+                'mae':mae,
+                'mse':mse
+            } 
         # elif classification 
         # return accuracy, precision, f1-score, 
-
-        return {
-            'x_imputed': out.get('x_imputed'),
-            'preds': out.get('preds'),
-            'cat_imp_loss': cat_imp_loss,
-            'num_imp_loss': num_imp_loss,
-            'label_loss': label_loss,
-            'total_loss': total_loss
-        } 
+        else: 
+            preds = torch.argmax(F.softmax(out['preds'], dim=1), dim=1).detach().cpu().numpy()
+            labels = np.array([np.arange(self.num_labels)]) 
+            cm = confusion_matrix(y, preds, labels= labels)
+            acc, rec, prec, f1 = evaluate(cm, weighted= False) 
+            return {
+                # 'x_imputed': out.get('x_imputed'),
+                # 'x_impted_adj': out.get('x_imputed_adj'),
+                # 'preds': out.get('preds'),
+                'cat_imp_loss': cat_imp_loss,
+                'num_imp_loss': num_imp_loss,
+                'label_loss': label_loss,
+                'total_loss': total_loss,
+                'accuracy': acc,
+                'recall': rec, 
+                'precision': prec,
+                'f1_score': f1
+            } 
 
 
