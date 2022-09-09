@@ -184,7 +184,7 @@ def train_valid_test_split(args, X, y, task_type= "cls"):
         if args.test_all_missing:
             X_test_tilde, _ = make_missing_by_row(X_test, args.test_n_missing)
         else:
-            X_test_tilde, _ = make_missing(X_test, args.prob)
+            X_test_tilde, _ = make_missing(X_test, args.test_missing_prob)
 
     if task_type == 'cls':
         y_train, y_valid, y_test\

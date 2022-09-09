@@ -33,6 +33,8 @@ parser.add_argument('--standardize', action= 'store_true',
                 help= 'standardize the inputs if it is true.')
 parser.add_argument('--prob', type= float, default= 0.1, 
                 help= 'the ratio of missing data to make in the original data')
+parser.add_argument('--test_missing_prob', type= float, default= 0.1, 
+                help= 'the ratio of missing data to make in the original data')
 parser.add_argument('--test_all_missing', action= 'store_true', 
                 help= 'force every observation in the test data to have missing values.')
 parser.add_argument('--test_n_missing', type= int, default= 1, 

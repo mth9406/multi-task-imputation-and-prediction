@@ -53,25 +53,23 @@ class Trainer:
                 break     
     
     def test(self, args, model, test_loader, device, perf_measure= None):
-        
         # initiate performance.
         perfs = {}        
-        if perf_measure is not None:
-            for perf in perf_measure: 
-                perfs[perf] = []
-
-        num_batches = len(test_loader) 
-
+        weights = []
         for batch_idx, batch in enumerate(test_loader): 
             batch['x'], batch['y'], batch['edge_index'], batch['edge_value']\
                 = batch['x'].to(device), batch['y'].to(device), batch['edge_index'].to(device), batch['edge_value'].to(device)
             batch['x_complete'], batch['mask'] = batch['x_complete'].to(device), batch['mask'].to(device) 
             model.eval() 
             loss = model.test_step(batch)
+            num_batch = len(batch['x'])
+            weights.append(num_batch)
             for k, v in loss.items(): 
                 if perfs.get(k) is None: 
                     perfs[k] = []
                 perfs.get(k).append(v)
+        for k, v in perfs.items(): 
+            perfs[k] = np.average(perfs.get(k), weights= weights)
         
         return perfs
                 

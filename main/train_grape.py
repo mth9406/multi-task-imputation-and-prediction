@@ -34,6 +34,8 @@ parser.add_argument('--standardize', action= 'store_true',
                 help= 'standardize the inputs if it is true.')
 parser.add_argument('--prob', type= float, default= 0.1, 
                 help= 'the ratio of missing data to make in the original data')
+parser.add_argument('--test_missing_prob', type= float, default= 0.1, 
+                help= 'the ratio of missing data to make in the original data')
 parser.add_argument('--test_all_missing', action= 'store_true', 
                 help= 'force every observation in the test data to have missing values.')
 parser.add_argument('--test_n_missing', type= int, default= 1, 
@@ -155,9 +157,26 @@ def main(args):
     print("Testing the model...")   
     perfs = trainer.test(args, model, test_loader, device)
     for k, perf in perfs.items(): 
-        print(f'{k}: {perf}')
+        print(f'{k}: {perf:.4f}')
         
     return perfs
 
 if __name__ == '__main__': 
     perf = main(args)
+    perfs = dict().fromkeys(perf, None)
+    for k in perfs.keys():
+        perfs[k] = [perf[k]]
+    for i in range(1, args.num_folds): 
+        perf = main(args)
+        for k in perfs.keys():
+            perfs[k].append(perf[k])
+    perfs_df = pd.DataFrame(perfs)
+    perfs_df = perfs_df.append(perfs_df.mean().to_dict(), ignore_index= True)
+    perfs_df = perfs_df.append(perfs_df.std().to_dict(), ignore_index= True)
+    perfs_df.index = [str(i) for i in range(len(perfs_df)-2)] + ['mean', 'std']
+
+    perfs_path = os.path.join(args.test_results_path, f'{args.model_type}/{args.data_type}')
+    os.makedirs(perfs_path, exist_ok= True)
+    pefs_df_file = os.path.join(perfs_path, f'{args.model_type}_missing_{args.prob}.csv')
+    perfs_df.to_csv(pefs_df_file)
+    print(perfs_df)
