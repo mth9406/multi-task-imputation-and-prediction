@@ -177,6 +177,6 @@ if __name__ == '__main__':
 
     perfs_path = os.path.join(args.test_results_path, f'{args.model_type}/{args.data_type}')
     os.makedirs(perfs_path, exist_ok= True)
-    pefs_df_file = os.path.join(perfs_path, f'{args.model_type}_missing_{args.prob}.csv')
+    pefs_df_file = os.path.join(perfs_path, f'{args.model_type}_missing_{args.test_missing_prob}.csv')
     perfs_df.to_csv(pefs_df_file)
     print(perfs_df)
