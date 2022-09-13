@@ -1,6 +1,7 @@
 import torch
 from torch import nn 
 from torch.nn import functional as F
+from torch.autograd import Variable
 import numpy as np
 # from torch_geometric.nn import MessagePassing
 
@@ -125,19 +126,24 @@ def coo_to_adj(rel, num_objects, device= None):
         adj = adj.to(device)
     return adj.reshape((num_objects,num_objects))
 
-def gumbel_softmax(logits, tau, hard= True, dim= 1):
-    r"""
-    returns a continuous approximation of the discrete distribution 
-    # Arguments   
-    ___________       
-    logits: torch FloatTensor type 
-        logits    
-    tau: float 
-        softmax temperature - a parameter that controls the smoothness of the samples   
-    hard: bool 
-        hard sampling if set true 
-    """ 
-    return F.gumbel_softmax(logits, tau=tau, hard=hard, dim= dim)
+def sample_gumbel(shape, eps=1e-10):
+    U = torch.rand(shape).float()
+    return - torch.log(eps - torch.log(U + eps))
+
+def gumbel_softmax_sample(logits, tau=1, eps=1e-10):
+    gumbel_noise = sample_gumbel(logits.size(), eps=eps)
+    if logits.is_cuda:
+        gumbel_noise = gumbel_noise.cuda()
+    y = logits + Variable(gumbel_noise)
+    return torch.sigmoid(y / tau)
+
+def gumbel_softmax(logits, tau=1, hard=False, eps=1e-10):
+    y_soft = gumbel_softmax_sample(logits, tau=tau, eps=eps)
+    if hard:
+        y = (y_soft > 0.5) * 1.
+    else:
+        y = y_soft
+    return y
 
 def kl_categorical_uniform(preds, num_features, eps=1e-16):
     kl_div = preds * torch.log(preds + eps)
@@ -153,7 +159,6 @@ class GraphLearningLayer(nn.Module):
         self.num_features = num_features
         self.tau = tau
 
-
     def forward(self, feature_emb): 
         # returns relationship between feature embeddings 
         # transform the output by torch.nonzero into edge_index 
@@ -164,11 +169,13 @@ class GraphLearningLayer(nn.Module):
         # feature_emb: (num_features, node_emb_size)
         logits = feature_emb@feature_emb.T # num_features, num_features
         if self.training:
-            relation = gumbel_softmax(logits, self.tau, hard= False, dim= -1)
+            relation = gumbel_softmax(logits, self.tau, hard= False)
+            relation = relation.fill_diagonal_(0.)
             probs = torch.sigmoid(logits)
             kl_loss = kl_categorical_uniform(probs, self.num_features)
         else: 
-            relation = gumbel_softmax(logits, self.tau, hard= True, dim= -1)
+            relation = gumbel_softmax(logits, self.tau, hard= True)
+            relation = relation.fill_diagonal_(0.)
             kl_loss = None
         relation_index = torch.nonzero(relation).T
         relation_index = relation_index.to(relation.device)
@@ -178,11 +185,44 @@ class GraphLearningLayer(nn.Module):
             'kl_loss': kl_loss
         }
 
-    def train_step(self, feature_emb):
-        # returns the relationship and the variational loss 
-        return feature_emb
-    
-    def test_step(self, feature_emb): 
-        # returns the relationship only.
-        # for the test step.
-        return feature_emb
+class RelationalEdgePredictionHead(nn.Module): 
+
+    def __init__(self, node_emb_size, num_features, device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+        super().__init__() 
+        self.decode = nn.Linear(2*node_emb_size, 1)
+        self.node_emb_size = node_emb_size
+        self.num_features = num_features
+        self.device = device
+
+    def forward(self, node_emb, feature_emb, relation_index):
+        bs = node_emb.shape[0]
+        src_neigh, dst_neigh, agg_by = self.get_neighbors(relation_index, bs)  
+
+        msg = torch.concat([node_emb[src_neigh], feature_emb[dst_neigh]], dim= -1)      
+        msg = self.decode(msg)
+        msg = scatter_mean(msg, agg_by, dim= 0)
+
+        return msg.reshape(-1, self.num_features)
+
+    def get_neighbors(self, relation_index, bs): 
+        nodes = torch.arange(bs) 
+        features = torch.arange(self.num_features)        
+        src = nodes.repeat_interleave(self.num_features).to(self.device)
+        dst = features.repeat(bs).to(self.device)
+        src_r, dst_r = relation_index 
+        agg_by = []
+        src_neigh, dst_neigh = [], []
+        for i in range(len(src)): 
+            src_neigh.append(src[i].detach().cpu().item())
+            dst_neigh.append(dst[i].detach().cpu().item())
+            related_features = dst_r[src_r==dst[i]].tolist()
+            srcs = [src[i].detach().cpu().item() for _ in range(len(related_features))]
+            agg = [i for _ in range(len(related_features)+1)]
+            dst_neigh += related_features
+            src_neigh += srcs
+            agg_by += agg
+        
+        src_neigh, dst_neigh, agg_by =\
+            torch.tensor(src_neigh).to(self.device),torch.tensor(dst_neigh).to(self.device),torch.tensor(agg_by).to(self.device)
+        
+        return src_neigh, dst_neigh, agg_by

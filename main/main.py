@@ -12,7 +12,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from utils.torchUtils import * 
+from utils.torch_utils import * 
 from layers.models import *
 from utils.train import *
 from utils.dataloader import * 

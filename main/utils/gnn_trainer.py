@@ -5,7 +5,7 @@ import numpy as np
 import os
 import csv
 
-from utils.torchUtils import get_loss_imp
+from utils.torch_utils import get_loss_imp
 from utils.utils import *
 
 class Trainer: 

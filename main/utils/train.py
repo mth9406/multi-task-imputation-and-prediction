@@ -5,7 +5,7 @@ import numpy as np
 import os
 import csv
 
-from utils.torchUtils import get_loss_imp
+from utils.torch_utils import get_loss_imp
 from sklearn.metrics import confusion_matrix, accuracy_score, recall_score, precision_score, f1_score
 from sklearn.metrics import ConfusionMatrixDisplay
 from sklearn.metrics import r2_score

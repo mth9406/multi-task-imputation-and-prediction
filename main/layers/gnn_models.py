@@ -1,7 +1,7 @@
 import torch 
 from torch import nn
 from torch.nn import functional as F
-from layers.gnnLayers import *
+from layers.gnn_layers import *
 
 import numpy as np
 from sklearn.metrics import r2_score
@@ -10,20 +10,9 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics import confusion_matrix
 from utils.utils import evaluate
 
-# from torch_geometric.nn import (
-#     SAGEConv,
-#     Aggregation,
-#     MeanAggregation,
-#     MaxAggregation,
-#     SumAggregation,
-#     StdAggregation,
-#     VarAggregation,
-#     MultiAggregation,
-#     SoftmaxAggregation,
-# )
 from torch_geometric.utils import dropout_adj
 
-# Sample model 
+# Grape 
 class Grape(nn.Module):
     def __init__(self, 
                 num_features,

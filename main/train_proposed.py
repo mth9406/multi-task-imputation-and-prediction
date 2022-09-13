@@ -17,6 +17,7 @@ from utils.dataloader import *
 from utils.utils import *
 from layers.gnn_models import *
 from layers.gnn_layers import *
+from layers.proposed_model import *
 
 from utils.gnn_trainer import Trainer
 
@@ -66,13 +67,15 @@ parser.add_argument('--msg_emb_size', type= int, default= 64,
                     help= 'the size of message embedding')
 parser.add_argument('--edge_drop_p', type= float, default= 0.3,
                     help= 'dropout ratio (default= 0.3)')
+parser.add_argument('--tau', type= float, default= 0.1,
+                    help= 'tau (default: 0.1)')
 
 # To test
 parser.add_argument('--test', action='store_true', help='test')
 parser.add_argument('--model_file', type= str, default= 'latest_checkpoint.pth.tar'
                     ,help= 'model file', required= False)
-parser.add_argument('--model_type', type= str, default= 'grape', 
-                    help= 'grape: GRAPE, ')
+parser.add_argument('--model_type', type= str, default= 'proposed', 
+                    help= 'proposed')
 
 parser.add_argument('--num_folds', type= int, default= 1, 
                     help = 'the number of folds')
@@ -115,8 +118,8 @@ def main(args):
     
     # model
     # input_size(=num_features), num_labels(n_labels), cat_vars_pos, numeric_vars_pos are obtaiend after loading the data
-    if args.model_type == 'grape':
-        model = Grape(
+    if args.model_type == 'proposed':
+        model = Proposed(
             args.input_size, 
             args.n_labels,
             args.cat_vars_pos,
@@ -126,6 +129,7 @@ def main(args):
             args.edge_emb_size, 
             args.msg_emb_size, 
             args.edge_drop_p, 
+            tau = args.tau,
             device= device
             ).to(device)
         # args.cat_features = None
