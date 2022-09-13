@@ -169,7 +169,7 @@ class GraphLearningLayer(nn.Module):
         # feature_emb: (num_features, node_emb_size)
         logits = feature_emb@feature_emb.T # num_features, num_features
         if self.training:
-            relation = gumbel_softmax(logits, self.tau, hard= False)
+            relation = gumbel_softmax(logits, self.tau, hard= True)
             relation = relation.fill_diagonal_(0.)
             probs = torch.sigmoid(logits)
             kl_loss = kl_categorical_uniform(probs, self.num_features)

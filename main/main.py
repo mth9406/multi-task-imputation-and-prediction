@@ -170,9 +170,10 @@ def main(args):
     
     # setting training args...
     if task_type == 'cls':
-        w = compute_class_weight(class_weight='balanced', classes= np.arange(args.n_labels), y= y_train.numpy())
-        w = torch.FloatTensor(w).to(device)
-        criterion = nn.CrossEntropyLoss(weight=w)
+        # w = compute_class_weight(class_weight='balanced', classes= np.arange(args.n_labels), y= y_train.numpy())
+        # w = torch.FloatTensor(w).to(device)
+        # criterion = nn.CrossEntropyLoss(weight=w)
+        criterion = nn.CrossEntropyLoss()
     else: 
         criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), args.lr)    
