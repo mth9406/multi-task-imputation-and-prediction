@@ -11,6 +11,7 @@ from sklearn.metrics import confusion_matrix
 from utils.utils import evaluate
 
 from torch_geometric.utils import dropout_adj
+from torch_geometric.utils import to_dense_adj
 
 # Proposed model 
 class Proposed(nn.Module):
@@ -25,6 +26,8 @@ class Proposed(nn.Module):
                 msg_emb_size:int = 64,
                 edge_drop_p:float = 0.3,
                 tau:float = 0.1,
+                imp_loss_penalty:float = 0.01,
+                kl_loss_penalty:float = 0.01,
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
                 ):
         super().__init__() 
@@ -47,6 +50,8 @@ class Proposed(nn.Module):
         self.cat_vars_pos = cat_vars_pos
         self.numeric_vars_pos = numeric_vars_pos
         self.tau = tau
+        self.imp_loss_penalty = imp_loss_penalty
+        self.kl_loss_penalty = kl_loss_penalty
         self.device = device
 
     def forward(self, x):
@@ -82,7 +87,8 @@ class Proposed(nn.Module):
             'x_imputed': d_hat,
             'x_impted_adj': d_hat_adj,
             'preds': y_hat, 
-            'kl_loss': kl_loss
+            'kl_loss': kl_loss,
+            'relation_index': relation_index
         }
 
     def train_step(self, batch): 
@@ -103,21 +109,20 @@ class Proposed(nn.Module):
         
         if len(self.cat_vars_pos) > 0:
             num_imp_loss = mse_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
-            total_loss += num_imp_loss
+            total_loss += self.imp_loss_penalty * num_imp_loss
         else: 
             num_imp_loss = float('nan')
         if len(self.numeric_vars_pos) > 0: 
             cat_imp_loss = bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
-            total_loss += cat_imp_loss
+            total_loss += self.imp_loss_penalty * cat_imp_loss
         else: 
             cat_imp_loss = float('nan')
         
         if out['kl_loss'] is not None: 
             kl_loss = out.get('kl_loss')
-            total_loss += kl_loss
+            total_loss += self.kl_loss_penalty * kl_loss
         else: 
             kl_loss = float('nan')
-
 
         return {
             'x_imputed': out.get('x_imputed'),
@@ -147,14 +152,20 @@ class Proposed(nn.Module):
         
         if len(self.cat_vars_pos) > 0:
             num_imp_loss = mse_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
-            total_loss += num_imp_loss
+            total_loss += self.imp_loss_penalty * num_imp_loss
         else: 
             num_imp_loss = float('nan')
         if len(self.numeric_vars_pos) > 0: 
             cat_imp_loss = bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
-            total_loss += cat_imp_loss
+            total_loss += self.imp_loss_penalty * cat_imp_loss
         else: 
             cat_imp_loss = float('nan')
+
+        if out['kl_loss'] is not None: 
+            kl_loss = out.get('kl_loss')
+            total_loss += self.kl_loss_penalty * kl_loss
+        else: 
+            kl_loss = float('nan')
 
         return {
             'x_imputed': out.get('x_imputed'),
@@ -199,6 +210,9 @@ class Proposed(nn.Module):
         total_loss = total_loss.detach().cpu().numpy()
         label_loss = label_loss.detach().cpu().numpy()
         y = batch['y'].detach().cpu().numpy()
+        self.relation_adj = to_dense_adj(out['relation_index'].detach().cpu()).squeeze()
+        self.relation_adj = self.relation_adj.numpy()
+
         # if regression:
         # return r2-score, mae and mse 
         if self.num_labels == 1:

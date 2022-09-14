@@ -24,6 +24,7 @@ class Grape(nn.Module):
                 edge_emb_size:int = 64,
                 msg_emb_size:int = 64,
                 edge_drop_p:float = 0.3,
+                imp_loss_penalty:float = 0.01,
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
                 ):
         super().__init__() 
@@ -44,6 +45,7 @@ class Grape(nn.Module):
         self.num_labels = num_labels 
         self.cat_vars_pos = cat_vars_pos
         self.numeric_vars_pos = numeric_vars_pos
+        self.imp_loss_penalty = imp_loss_penalty
         self.device = device
 
     def forward(self, x):
@@ -95,12 +97,12 @@ class Grape(nn.Module):
         
         if len(self.cat_vars_pos) > 0:
             num_imp_loss = mse_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
-            total_loss += num_imp_loss
+            total_loss += self.imp_loss_penalty * num_imp_loss
         else: 
             num_imp_loss = float('nan')
         if len(self.numeric_vars_pos) > 0: 
             cat_imp_loss = bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
-            total_loss += cat_imp_loss
+            total_loss += self.imp_loss_penalty * cat_imp_loss
         else: 
             cat_imp_loss = float('nan')
 
@@ -131,12 +133,12 @@ class Grape(nn.Module):
         
         if len(self.cat_vars_pos) > 0:
             num_imp_loss = mse_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
-            total_loss += num_imp_loss
+            total_loss += self.imp_loss_penalty * num_imp_loss
         else: 
             num_imp_loss = float('nan')
         if len(self.numeric_vars_pos) > 0: 
             cat_imp_loss = bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
-            total_loss += cat_imp_loss
+            total_loss += self.imp_loss_penalty * cat_imp_loss
         else: 
             cat_imp_loss = float('nan')
 
