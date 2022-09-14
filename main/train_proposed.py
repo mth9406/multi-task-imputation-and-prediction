@@ -5,6 +5,8 @@ import argparse
 import torch
 import numpy as np
 import pandas as pd
+import networkx as nx
+from matplotlib import pyplot as plt
 
 import torch
 from torch import nn
@@ -51,8 +53,10 @@ parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
 parser.add_argument('--patience', type=int, default=30, help='patience of early stopping condition')
 parser.add_argument('--delta', type= float, default=0., help='significant improvement to update a model')
 parser.add_argument('--print_log_option', type= int, default= 10, help= 'print training loss every print_log_option')
-parser.add_argument('--imp_loss_penalty', type= float, default= 1.0, 
+parser.add_argument('--imp_loss_penalty', type= float, default= 0.01, 
                     help= 'the penalty term of imputation loss')
+parser.add_argument('--kl_loss_penalty', type= float, default= 0.01, 
+                    help= 'the penalty term of kl loss')
 
 # model options
 parser.add_argument('--model_path', type= str, default= './data/gesture/model',
@@ -130,6 +134,8 @@ def main(args):
             args.msg_emb_size, 
             args.edge_drop_p, 
             tau = args.tau,
+            imp_loss_penalty= args.imp_loss_penalty,
+            kl_loss_penalty = args.kl_loss_penalty,
             device= device
             ).to(device)
         # args.cat_features = None
@@ -162,7 +168,33 @@ def main(args):
     perfs = trainer.test(args, model, test_loader, device)
     for k, perf in perfs.items(): 
         print(f'{k}: {perf:.4f}')
-        
+
+    # saving relation graph 
+    print('saving a relation graph...')
+    relation_adj = getattr(model, 'relation_adj')
+    plt.figure(figsize =(30,30))
+    graph_path = os.path.join(args.test_results_path, f'{args.model_type}/{args.data_type}')
+    os.makedirs(graph_path, exist_ok= True)
+    graph_file = os.path.join(graph_path, f'relation_graph_{args.data_type}.png')
+    relation_adj = pd.DataFrame(relation_adj, columns = args.column_names, index= args.column_names)
+    relation_adj.to_csv(os.path.join(graph_path, f'graph_{args.data_type}.csv'))
+    options = {
+            'node_color': 'skyblue',
+            'node_size': 3000,
+            'width': 0.5 ,
+            'arrowstyle': '-|>',
+            'arrowsize': 20,
+            'alpha' : 1,
+            'font_size' : 15
+        }
+    G = nx.from_pandas_adjacency(relation_adj, create_using=nx.DiGraph)
+    G = nx.DiGraph(G)
+    pos = nx.circular_layout(G)
+    nx.draw_networkx(G, pos=pos, **options)
+    plt.savefig(graph_file, format="PNG")
+    plt.close('all')  
+    print('saving the graph done!')
+
     return perfs
 
 if __name__ == '__main__': 
@@ -183,4 +215,4 @@ if __name__ == '__main__':
     os.makedirs(perfs_path, exist_ok= True)
     pefs_df_file = os.path.join(perfs_path, f'{args.model_type}_missing_{args.prob}.csv')
     perfs_df.to_csv(pefs_df_file)
-    print(perfs_df)
+    print(perfs_df.tail())
