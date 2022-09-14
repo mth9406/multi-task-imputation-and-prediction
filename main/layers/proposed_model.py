@@ -108,15 +108,15 @@ class Proposed(nn.Module):
         total_loss = label_loss
         
         if len(self.cat_vars_pos) > 0:
-            num_imp_loss = mse_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
-            total_loss += self.imp_loss_penalty * num_imp_loss
-        else: 
-            num_imp_loss = float('nan')
-        if len(self.numeric_vars_pos) > 0: 
             cat_imp_loss = bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
             total_loss += self.imp_loss_penalty * cat_imp_loss
         else: 
             cat_imp_loss = float('nan')
+        if len(self.numeric_vars_pos) > 0: 
+            num_imp_loss = mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
+            total_loss += self.imp_loss_penalty * num_imp_loss
+        else: 
+            num_imp_loss = float('nan')
         
         if out['kl_loss'] is not None: 
             kl_loss = out.get('kl_loss')
@@ -151,15 +151,15 @@ class Proposed(nn.Module):
         total_loss = label_loss
         
         if len(self.cat_vars_pos) > 0:
-            num_imp_loss = mse_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
-            total_loss += self.imp_loss_penalty * num_imp_loss
-        else: 
-            num_imp_loss = float('nan')
-        if len(self.numeric_vars_pos) > 0: 
             cat_imp_loss = bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
             total_loss += self.imp_loss_penalty * cat_imp_loss
         else: 
             cat_imp_loss = float('nan')
+        if len(self.numeric_vars_pos) > 0: 
+            num_imp_loss = mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
+            total_loss += self.imp_loss_penalty * num_imp_loss
+        else: 
+            num_imp_loss = float('nan')
 
         if out['kl_loss'] is not None: 
             kl_loss = out.get('kl_loss')
@@ -194,13 +194,13 @@ class Proposed(nn.Module):
         
         total_loss = label_loss
         
-        if len(self.cat_vars_pos) > 0:
-            num_imp_loss = mse_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
+        if len(self.numeric_vars_pos) > 0:
+            num_imp_loss = mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
             total_loss += num_imp_loss
             num_imp_loss = num_imp_loss.detach().cpu().numpy()
         else: 
             num_imp_loss = float('nan')
-        if len(self.numeric_vars_pos) > 0: 
+        if len(self.cat_vars_pos) > 0: 
             cat_imp_loss = bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
             total_loss += cat_imp_loss
             cat_imp_loss = cat_imp_loss.detach().cpu().numpy()
