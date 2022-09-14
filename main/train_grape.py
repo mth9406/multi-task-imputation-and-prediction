@@ -50,7 +50,7 @@ parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
 parser.add_argument('--patience', type=int, default=30, help='patience of early stopping condition')
 parser.add_argument('--delta', type= float, default=0., help='significant improvement to update a model')
 parser.add_argument('--print_log_option', type= int, default= 10, help= 'print training loss every print_log_option')
-parser.add_argument('--imp_loss_penalty', type= float, default= 1.0, 
+parser.add_argument('--imp_loss_penalty', type= float, default= 0.01, 
                     help= 'the penalty term of imputation loss')
 
 # model options
@@ -126,6 +126,7 @@ def main(args):
             args.edge_emb_size, 
             args.msg_emb_size, 
             args.edge_drop_p, 
+            imp_loss_penalty= args.imp_loss_penalty,
             device= device
             ).to(device)
         # args.cat_features = None

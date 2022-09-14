@@ -160,6 +160,8 @@ def train_valid_test_split(args, X, y, task_type= "cls"):
         numeric_vars_pos = list(set(tot_features)-set(args.cat_vars_pos))       
         args.numeric_vars_pos = numeric_vars_pos 
 
+    args.column_names = list(X.columns)
+
     if args.standardize: 
         if len(args.cat_vars_pos) == 0:
             X_train, cache = min_max_scaler(X_train)
