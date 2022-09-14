@@ -178,7 +178,7 @@ class Grape(nn.Module):
         if len(self.numeric_vars_pos) > 0: 
             num_imp_loss = mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
             total_loss += num_imp_loss
-            num_imp_loss = cat_imp_loss.detach().cpu().numpy()
+            num_imp_loss = num_imp_loss.detach().cpu().numpy()
         else: 
             num_imp_loss = float('nan')
 
