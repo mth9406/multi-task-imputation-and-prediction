@@ -357,6 +357,7 @@ def load_wine(args):
     y.loc[y==6] = 1
     y.loc[(y == 7)|(y==8)] = 2
     args.input_size = X.shape[1] 
+    args.cat_vars_pos = []
     args.n_labels = 3
 
     print(data.info())
@@ -386,6 +387,7 @@ def load_appliances(args):
     X, y = data.iloc[:, 2:-2], data.iloc[:, 1]
     args.input_size = X.shape[1]
     args.n_labels = 1
+    args.cat_vars_pos = []
     print(data.info())
     print('-'*20)
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
@@ -522,6 +524,7 @@ def load_spam(args):
     
     args.input_size = X.shape[1]
     args.n_labels = 2
+    args.cat_vars_pos = []
     print(data.info())
     print('-'*20)
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
@@ -594,6 +597,7 @@ def load_letter(args):
     
     args.input_size = X.shape[1]
     args.n_labels = len(alphabets)
+    args.cat_vars_pos = []
     print(data.info())
     print('-'*20)
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
@@ -623,6 +627,7 @@ def load_eeg(args):
     
     args.input_size = X.shape[1]
     args.n_labels = 2
+    args.cat_vars_pos = []
     print(data.info())
     print('-'*20)
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \

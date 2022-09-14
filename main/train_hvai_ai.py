@@ -194,6 +194,11 @@ def main(args):
     
     print("==============================================")
     print("Testing the linear model...")
+    print('loading the saved model')
+    model_file = os.path.join(args.model_path, args.model_name)
+    ckpt = torch.load(model_file)
+    linear_model.load_state_dict(ckpt['state_dict'])
+    print('loading done!')  
     if task_type == 'cls': 
         perf_task = test_cls(args, linear_model, test_loader, criterion, device)
     else: 

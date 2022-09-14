@@ -164,7 +164,12 @@ def main(args):
         trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, device)
     
     print("==============================================")
-    print("Testing the model...")   
+    print("Testing the model...") 
+    print('loading the saved model')
+    model_file = os.path.join(args.model_path, args.model_file)
+    ckpt = torch.load(model_file)
+    model.load_state_dict(ckpt['state_dict'])
+    print('loading done!')  
     perfs = trainer.test(args, model, test_loader, device)
     for k, perf in perfs.items(): 
         print(f'{k}: {perf:.4f}')

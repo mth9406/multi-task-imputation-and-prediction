@@ -78,6 +78,8 @@ parser.add_argument('--imp_model', type= str, default= None ,
 parser.add_argument('--test', action='store_true', help='test')
 parser.add_argument('--model_file', type= str, default= 'latest_checkpoint.pth.tar'
                     ,help= 'model file', required= False)
+parser.add_argument('--model_name', type= str, default= 'latest_checkpoint.pth.tar'
+                    ,help= 'model name')
 parser.add_argument('--model_type', type= str, default= 'linear', 
                     help= 'linear: SoftImpute, ai: AutoImpute, ipv: Imputation and Prediction using variational auto-encoder')
 parser.add_argument('--vai_n_samples', type= int, default= 100, 
@@ -181,7 +183,8 @@ def main(args):
         patience= args.patience,
         verbose= True,
         delta = args.delta,
-        path= args.model_path
+        path= args.model_path,
+        model_name= args.model_name
     ) 
        
     if args.test: 
@@ -193,6 +196,9 @@ def main(args):
     
     print("==============================================")
     print("Testing the model...")
+    model_file = os.path.join(args.model_path, args.model_name)
+    ckpt = torch.load(model_file)
+    model.load_state_dict(ckpt['state_dict'])
     if task_type == 'cls': 
         perf = test_cls(args, model, test_loader, criterion, device)
     else: 

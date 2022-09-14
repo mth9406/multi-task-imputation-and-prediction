@@ -71,6 +71,8 @@ parser.add_argument('--edge_drop_p', type= float, default= 0.3,
 parser.add_argument('--test', action='store_true', help='test')
 parser.add_argument('--model_file', type= str, default= 'latest_checkpoint.pth.tar'
                     ,help= 'model file', required= False)
+parser.add_argument('--model_name', type= str, default= 'latest_checkpoint.pth.tar'
+                    ,help= 'model name')
 parser.add_argument('--model_type', type= str, default= 'grape', 
                     help= 'grape: GRAPE, ')
 
@@ -139,7 +141,8 @@ def main(args):
         patience= args.patience,
         verbose= True,
         delta = args.delta,
-        path= args.model_path
+        path= args.model_path,
+        model_name= args.model_name
     ) 
 
     trainer = Trainer()
@@ -155,7 +158,12 @@ def main(args):
         trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, device)
     
     print("==============================================")
-    print("Testing the model...")   
+    print("Testing the model...")  
+    print('loading the saved model')
+    model_file = os.path.join(args.model_path, args.model_name)
+    ckpt = torch.load(model_file)
+    model.load_state_dict(ckpt['state_dict'])
+    print('loading done!')   
     perfs = trainer.test(args, model, test_loader, device)
     for k, perf in perfs.items(): 
         print(f'{k}: {perf:.4f}')
