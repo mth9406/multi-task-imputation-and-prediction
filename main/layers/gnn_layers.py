@@ -62,7 +62,7 @@ class GCNBlock(nn.Module):
         node_emb = node_emb@self.Q + self.b_Q # bs, node_emb_size 
         feature_emb = torch.concat([feature_emb, mgs_f], dim=1)
         feature_emb = feature_emb@self.Q + self.b_Q # num_features, node_emb_size 
-
+           
         # edge update
         edge_emb = torch.concat([edge_emb, node_emb[src], feature_emb[dst]], dim= 1)
         edge_emb = edge_emb@self.W + self.b_W
@@ -135,12 +135,18 @@ def gumbel_softmax_sample(logits, tau=1, eps=1e-10):
     if logits.is_cuda:
         gumbel_noise = gumbel_noise.cuda()
     y = logits + Variable(gumbel_noise)
-    return torch.sigmoid(y / tau)
+    return torch.softmax(y / tau, dim= 1)
 
 def gumbel_softmax(logits, tau=1, hard=False, eps=1e-10):
     y_soft = gumbel_softmax_sample(logits, tau=tau, eps=eps)
     if hard:
-        y = (y_soft > 0.5) * 1.
+        shape = logits.size()
+        _, k = y_soft.data.max(-1)
+        y_hard = torch.zeros(*shape)
+        if y_soft.is_cuda:
+            y_hard = y_hard.cuda()
+        y_hard = y_hard.zero_().scatter_(-1, k.view(shape[:-1] + (1,)), 1.0)
+        y = Variable(y_hard - y_soft.data) + y_soft
     else:
         y = y_soft
     return y
@@ -171,7 +177,7 @@ class GraphLearningLayer(nn.Module):
         if self.training:
             relation = gumbel_softmax(logits, self.tau, hard= True)
             relation = relation.fill_diagonal_(0.)
-            probs = torch.sigmoid(logits)
+            probs = torch.softmax(logits, dim= 1)
             kl_loss = kl_categorical_uniform(probs, self.num_features)
         else: 
             relation = gumbel_softmax(logits, self.tau, hard= True)

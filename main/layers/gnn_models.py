@@ -50,7 +50,7 @@ class Grape(nn.Module):
 
     def forward(self, x):
         if self.training:
-            edge_index, edge_emb = dropout_adj(x['edge_index'], x['edge_value'])
+            edge_index, edge_emb = dropout_adj(x['edge_index'], x['edge_value'], p= self.edge_drop_p)
         else: 
             edge_index, edge_emb = x['edge_index'], x['edge_value']
         edge_emb = edge_emb[:, None]
