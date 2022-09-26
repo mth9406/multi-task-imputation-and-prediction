@@ -25,7 +25,8 @@ class Grape(nn.Module):
                 msg_emb_size:int = 64,
                 edge_drop_p:float = 0.3,
                 imp_loss_penalty:float = 0.01,
-                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
+                task_type: str = 'cls'
                 ):
         super().__init__() 
         
@@ -35,6 +36,10 @@ class Grape(nn.Module):
             setattr(self, f'gcn_block{i}', GCNBlock(node_emb_size, node_emb_size, edge_emb_size, edge_emb_size, msg_emb_size))
         self.eph = EdgePredictionHead(node_emb_size, num_features, device)
         self.nph = NodePredictionHead(num_features, num_labels)
+
+        self.mse_loss = nn.MSELoss()
+        self.cls_loss = nn.CrossEntropyLoss()
+        self.bce_loss = nn.BCEWithLogitsLoss()
 
         self.num_layers = num_layers
         self.edge_drop_p = edge_drop_p
@@ -47,6 +52,7 @@ class Grape(nn.Module):
         self.numeric_vars_pos = numeric_vars_pos
         self.imp_loss_penalty = imp_loss_penalty
         self.device = device
+        self.task_type = task_type
 
     def forward(self, x):
         if self.training:
@@ -66,10 +72,10 @@ class Grape(nn.Module):
                 = torch.relu(node_emb+node_emb_b4), torch.relu(edge_emb+edge_emb_b4), torch.relu(feature_emb+feature_emb_b4)
         
         d_hat = self.eph(node_emb, feature_emb)
-        if len(self.cat_vars_pos) > 0: 
-            d_hat[:, self.cat_vars_pos] = torch.sigmoid(d_hat[:, self.cat_vars_pos]) 
 
         d_hat_adj = d_hat.clone().detach()
+        if len(self.cat_vars_pos) > 0: 
+            d_hat_adj[:, self.cat_vars_pos] = torch.sigmoid(d_hat_adj[:, self.cat_vars_pos]) 
         d_hat_adj[x['mask']==1] = x['x'][x['mask'] == 1]
         y_hat = self.nph(d_hat_adj)
 
@@ -84,24 +90,23 @@ class Grape(nn.Module):
         # (1) feed forward
         # with torch.set_grad_enabled(True)
         out = self.forward(batch)
-        mse_loss = nn.MSELoss()
-        cls_loss = nn.CrossEntropyLoss()
-        bce_loss = nn.BCELoss()
 
-        if self.num_labels == 1: 
-            label_loss = mse_loss(out['preds'], batch['y'])
+        if self.task_type == 'regr': 
+            label_loss = self.mse_loss(out['preds'], batch['y'])
+        elif self.task_type == 'cls' and self.num_labels == 1: 
+            label_loss = self.bce_loss(out['preds'], batch['y'])
         else: 
-            label_loss = cls_loss(out['preds'], batch['y'])
-        
+            label_loss = self.cls_loss(out['preds'], batch['y'])
+
         total_loss = label_loss
         
         if len(self.cat_vars_pos) > 0:
-            cat_imp_loss = bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
+            cat_imp_loss = self.bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
             total_loss += self.imp_loss_penalty * cat_imp_loss
         else: 
             cat_imp_loss = float('nan')
         if len(self.numeric_vars_pos) > 0: 
-            num_imp_loss = mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
+            num_imp_loss = self.mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
             total_loss += self.imp_loss_penalty * num_imp_loss
         else: 
             num_imp_loss = float('nan')
@@ -120,24 +125,23 @@ class Grape(nn.Module):
     def val_step(self, batch): 
         # with torch.no_grad()
         out = self.forward(batch)
-        mse_loss = nn.MSELoss()
-        cls_loss = nn.CrossEntropyLoss()
-        bce_loss = nn.BCELoss()
 
-        if self.num_labels == 1: 
-            label_loss = mse_loss(out['preds'], batch['y'])
+        if self.task_type == 'regr': 
+            label_loss = self.mse_loss(out['preds'], batch['y'])
+        elif self.task_type == 'cls' and self.num_labels == 1: 
+            label_loss = self.bce_loss(out['preds'], batch['y'])
         else: 
-            label_loss = cls_loss(out['preds'], batch['y'])
+            label_loss = self.cls_loss(out['preds'], batch['y'])
         
         total_loss = label_loss
         
         if len(self.cat_vars_pos) > 0:
-            cat_imp_loss = bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
+            cat_imp_loss = self.bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
             total_loss += self.imp_loss_penalty * cat_imp_loss
         else: 
             cat_imp_loss = float('nan')
         if len(self.numeric_vars_pos) > 0: 
-            num_imp_loss = mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
+            num_imp_loss = self.mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
             total_loss += self.imp_loss_penalty * num_imp_loss
         else: 
             num_imp_loss = float('nan')
@@ -158,25 +162,24 @@ class Grape(nn.Module):
         # returns test loss
         # and test performance measures
         out = self.forward(batch)
-        mse_loss = nn.MSELoss()
-        cls_loss = nn.CrossEntropyLoss()
-        bce_loss = nn.BCELoss()
 
-        if self.num_labels == 1: 
-            label_loss = mse_loss(out['preds'], batch['y'])
+        if self.task_type == 'regr': 
+            label_loss = self.mse_loss(out['preds'], batch['y'])
+        elif self.task_type == 'cls' and self.num_labels == 1: 
+            label_loss = self.bce_loss(out['preds'], batch['y'])
         else: 
-            label_loss = cls_loss(out['preds'], batch['y'])
+            label_loss = self.cls_loss(out['preds'], batch['y'])
         
         total_loss = label_loss
         
         if len(self.cat_vars_pos) > 0:
-            cat_imp_loss = bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
+            cat_imp_loss = self.bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
             total_loss += cat_imp_loss
             cat_imp_loss = cat_imp_loss.detach().cpu().numpy()
         else: 
             cat_imp_loss = float('nan')
         if len(self.numeric_vars_pos) > 0: 
-            num_imp_loss = mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
+            num_imp_loss = self.mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
             total_loss += num_imp_loss
             num_imp_loss = num_imp_loss.detach().cpu().numpy()
         else: 
@@ -187,11 +190,11 @@ class Grape(nn.Module):
         y = batch['y'].detach().cpu().numpy()
         # if regression:
         # return r2-score, mae and mse 
-        if self.num_labels == 1:
+        if self.task_type == 'regr':
             preds = out['preds'].detach().cpu().numpy()
-            r2 = r2_score(y, preds)
-            mae = mean_absolute_error(y, preds) 
-            mse = mean_squared_error(y, preds)
+            r2 = r2_score(y.flatten(), preds.flatten())
+            mae = mean_absolute_error(y.flatten(), preds.flatten()) 
+            mse = mean_squared_error(y.flatten(), preds.flatten())
             return {
             #     'x_imputed': out.get('x_imputed'),
             #     'x_impted_adj': out.get('x_imputed_adj'),

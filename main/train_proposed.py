@@ -53,9 +53,9 @@ parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
 parser.add_argument('--patience', type=int, default=30, help='patience of early stopping condition')
 parser.add_argument('--delta', type= float, default=0., help='significant improvement to update a model')
 parser.add_argument('--print_log_option', type= int, default= 10, help= 'print training loss every print_log_option')
-parser.add_argument('--imp_loss_penalty', type= float, default= 0.01, 
+parser.add_argument('--imp_loss_penalty', type= float, default= 1., 
                     help= 'the penalty term of imputation loss')
-parser.add_argument('--kl_loss_penalty', type= float, default= 0.01, 
+parser.add_argument('--kl_loss_penalty', type= float, default= 1., 
                     help= 'the penalty term of kl loss')
 
 # model options
@@ -138,7 +138,8 @@ def main(args):
             tau = args.tau,
             imp_loss_penalty= args.imp_loss_penalty,
             kl_loss_penalty = args.kl_loss_penalty,
-            device= device
+            device= device,
+            task_type= args.task_type
             ).to(device)
         # args.cat_features = None
     else:
@@ -146,6 +147,7 @@ def main(args):
         sys.exit()    
 
     optimizer = optim.Adam(model.parameters(), args.lr)    
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, 10) 
     early_stopping = EarlyStopping(
         patience= args.patience,
         verbose= True,
@@ -164,7 +166,7 @@ def main(args):
         print('loading done!')
     else: 
         print('start training...')
-        trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, device)
+        trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, scheduler, device)
     
     print("==============================================")
     print("Testing the model...") 
@@ -197,7 +199,7 @@ def main(args):
         }
     G = nx.from_pandas_adjacency(relation_adj, create_using=nx.DiGraph)
     G = nx.DiGraph(G)
-    pos = nx.circular_layout(G)
+    pos = nx.kamada_kawai_layout(G)
     nx.draw_networkx(G, pos=pos, **options)
     plt.savefig(graph_file, format="PNG")
     plt.close('all')  

@@ -131,14 +131,15 @@ def main(args):
     else:
         print("The model is yet to be implemented.")
         sys.exit()
-    
+
     # setting training args...
-    if task_type == 'cls':
-        w = compute_class_weight(class_weight='balanced', classes= np.arange(args.n_labels), y= y_train.numpy())
-        w = torch.FloatTensor(w).to(device)
-        criterion = nn.CrossEntropyLoss(weight=w)
-    else: 
+    if args.task_type == 'regr': 
         criterion = nn.MSELoss()
+    elif args.task_type == 'cls' and args.num_labels == 1: 
+        criterion = nn.CrossEntropyLoss()
+    else: 
+        criterion = nn.BCELoss()
+
     optimizer = optim.Adam(model.parameters(), args.lr)    
     early_stopping = EarlyStopping(
         patience= args.patience,

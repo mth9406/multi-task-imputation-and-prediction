@@ -5,6 +5,7 @@ import argparse
 import torch
 import numpy as np
 import pandas as pd
+pd.set_option('display.max_columns', 20)
 
 import torch
 from torch import nn
@@ -50,7 +51,7 @@ parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
 parser.add_argument('--patience', type=int, default=30, help='patience of early stopping condition')
 parser.add_argument('--delta', type= float, default=0., help='significant improvement to update a model')
 parser.add_argument('--print_log_option', type= int, default= 10, help= 'print training loss every print_log_option')
-parser.add_argument('--imp_loss_penalty', type= float, default= 0.01, 
+parser.add_argument('--imp_loss_penalty', type= float, default= 1., 
                     help= 'the penalty term of imputation loss')
 
 # model options
@@ -136,7 +137,8 @@ def main(args):
         print("The model is yet to be implemented.")
         sys.exit()    
 
-    optimizer = optim.Adam(model.parameters(), args.lr)    
+    optimizer = optim.Adam(model.parameters(), args.lr)   
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, 10) 
     early_stopping = EarlyStopping(
         patience= args.patience,
         verbose= True,
@@ -155,7 +157,7 @@ def main(args):
         print('loading done!')
     else: 
         print('start training...')
-        trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, device)
+        trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, scheduler, device)
     
     print("==============================================")
     print("Testing the model...")  

@@ -13,7 +13,11 @@ class Trainer:
     def __init__(self):
         super().__init__()
 
-    def __call__(self, args, model, train_loader, valid_loader, early_stopping, optimizer, device):
+    def __call__(self, args, model, 
+                train_loader, valid_loader, 
+                early_stopping, 
+                optimizer, scheduler=None, 
+                device= torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
         num_batches = len(train_loader)
         # # to store losses per epoch
         # tr_loss, valid_loss = 0, 0 # todo

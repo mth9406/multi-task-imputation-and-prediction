@@ -194,6 +194,9 @@ def train_valid_test_split(args, X, y, task_type= "cls"):
     else: 
         y_train, y_valid, y_test\
             = torch.FloatTensor(y_train), torch.FloatTensor(y_valid), torch.FloatTensor(y_test)
+    
+    args.task_type = task_type
+
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
 def load_gestures(args):
@@ -231,6 +234,8 @@ def load_gestures(args):
         # convert y to a numeric variable
         g.iloc[:, -1] = g.iloc[:, -1].map(mapping).astype('int64')
         data = pd.concat([data, g], axis= 0)
+    args.n_labels = 5 
+    args.task_type = 'cls'
     print(data.info())
     print('-'*20)    
     X, y = data.iloc[:, :-1], data.iloc[:, -1]
@@ -255,21 +260,23 @@ def load_elec(args):
     """
     f = os.path.join(args.data_path, 'elec_data.csv') # file
     # data = pd.read_csv(f, encoding= 'cp949')
-    data = pd.read_csv(f)
+    data = pd.read_csv(f, encoding= 'cp949')
     data = data.dropna(axis= 0)
     print(data.info())
     print('-'*20)
 
     X, y = data.iloc[:, :8], data.iloc[:, -1] # voltage high-frequency average 
+    args.cat_vars_pos = []
     # to convert y to a numeric variable
     mapping = {'정상':0, '주의':1, '경고':2}
     y = y.map(mapping)
 
     args.n_labels = 3
+    args.task_type = 'cls'
     args.input_size= 8
 
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
-        = train_valid_test_split(args, X, y)
+        = train_valid_test_split(args, X, y, 'cls')
 
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde 
 
@@ -294,6 +301,9 @@ def load_wind_turbin_power(args):
     data = pd.merge(left = X, right= y, on= 'Timestamp' ,how= 'inner')
     data = data.dropna(axis= 0)
     X, y = data.iloc[:, 1:-1], data.iloc[:, -1]
+    args.cat_vars_pos = []
+    args.n_labels = 1
+    args.task_type = 'regr'
     print(data.info())
     print('-'*20)
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
@@ -327,11 +337,11 @@ def load_mobile(args):
     args.cat_vars_pos = list(range(X_cat.shape[1]))
     args.input_size = X.shape[1]
     args.n_labels = 4
-
+    args.task_type = 'cls'
     print(data.info())
     print('-'*20)
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
-        = train_valid_test_split(args, X, y)
+        = train_valid_test_split(args, X, y, 'cls')
 
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
@@ -359,7 +369,7 @@ def load_wine(args):
     args.input_size = X.shape[1] 
     args.cat_vars_pos = []
     args.n_labels = 3
-
+    args.task_type = 'cls'
     print(data.info())
     print('-'*20)
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
@@ -777,6 +787,113 @@ def load_bench(args):
 
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
+def load_concrete(args):
+    r"""
+    A function to load concrete-data.
+    
+    # Parameters
+    args contains the followings...
+    * data_path: a path to gesture-data
+    * tr: the ratio of training data to the original data
+    * val: the ratio of validation data to the original data
+    remaining is the test data so, tr+val < 1.
+
+    # Returns
+    X_train, X_valid, X_test, y_train, y_valid, y_test (torch.FloatTensor for "X", torch.FloatTensor for "y")    
+    """
+    try:
+        data_file = os.path.join(args.data_path, 'Concrete_Data.csv')
+        data = pd.read_csv(data_file)
+    except:
+        data_file = os.path.join(args.data_path, 'Concrete_Data.xsl')
+        data = pd.read_excel(data_file)
+    
+    X, y = data.iloc[:, :-1], data.iloc[:,-1]
+    args.cat_vars_pos = []
+    args.input_size = X.shape[1]
+    args.n_labels = 1
+    print(data.info())
+    print('-'*20)
+    X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
+        = train_valid_test_split(args, X, y, task_type= 'regr')
+
+    return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
+
+def load_energy(args):
+    r"""
+    A function to load energy-data.
+    
+    # Parameters
+    args contains the followings...
+    * data_path: a path to gesture-data
+    * tr: the ratio of training data to the original data
+    * val: the ratio of validation data to the original data
+    remaining is the test data so, tr+val < 1.
+
+    # Returns
+    X_train, X_valid, X_test, y_train, y_valid, y_test (torch.FloatTensor for "X", torch.FloatTensor for "y")    
+    """
+    try:
+        data_file = os.path.join(args.data_path, 'ENB2012_data.csv')
+        data = pd.read_csv(data_file)
+    except:
+        data_file = os.path.join(args.data_path, 'ENB2012_data.xsl')
+        data = pd.read_excel(data_file)
+    data = data.dropna()
+    X, y = data.iloc[:, :-2], data.iloc[:,-2:]
+    args.cat_vars_pos = []
+    args.input_size = X.shape[1]
+    args.n_labels = 2
+    print(data.info())
+    print('-'*20)
+    X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
+        = train_valid_test_split(args, X, y, task_type= 'regr')
+
+    return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
+
+def load_yacht(args):
+    r"""
+    A function to load yacht-data.
+    
+    # Parameters
+    args contains the followings...
+    * data_path: a path to gesture-data
+    * tr: the ratio of training data to the original data
+    * val: the ratio of validation data to the original data
+    remaining is the test data so, tr+val < 1.
+
+    # Returns
+    X_train, X_valid, X_test, y_train, y_valid, y_test (torch.FloatTensor for "X", torch.FloatTensor for "y")    
+    """
+
+    data_file = os.path.join(args.data_path, 'yacht_hydrodynamics.data')
+    with open(data_file) as data:
+        lines = []
+        while True:
+            line = data.readline()
+            if not line:
+                break
+            d = line.strip().split(' ')
+            if '' in d:
+                continue
+            else: 
+                d = list(map(lambda x: float(x), d))
+                lines.append(d)
+
+    data = pd.DataFrame(lines, columns = [f'x{i}' for i in range(7)])
+
+    data = data.dropna()
+    X, y = data.iloc[:, :-1], data.iloc[:,-1]
+    args.cat_vars_pos = []
+    args.input_size = X.shape[1]
+    args.n_labels = 1
+    print(data.info())
+    print('-'*20)
+    X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
+        = train_valid_test_split(args, X, y, task_type= 'regr')
+
+    return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
+
 def load_data(args): 
 
     print("Loading data...")
@@ -862,7 +979,19 @@ def load_data(args):
     elif args.data_type == 'bench': 
         X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde\
             = load_bench(args)        
+        task_type= 'regr'   
+    elif args.data_type == 'concrete': 
+        X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde\
+            = load_concrete(args)        
         task_type= 'regr'    
+    elif args.data_type == 'energy': 
+        X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde\
+            = load_energy(args)        
+        task_type= 'regr'     
+    elif args.data_type == 'yacht': 
+        X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde\
+            = load_yacht(args)        
+        task_type= 'regr'            
     else: 
         print("Unkown data type, data type should be one of the followings...")
         print("gesture, elec, wind, mobile, wine, appliances, pulsar, faults, abalone, spam, letter")
