@@ -218,14 +218,14 @@ class Grape(nn.Module):
                 # 'x_imputed': out.get('x_imputed'),
                 # 'x_impted_adj': out.get('x_imputed_adj'),
                 # 'preds': out.get('preds'),
-                'cat_imp_loss': cat_imp_loss,
-                'num_imp_loss': num_imp_loss,
                 'label_loss': label_loss,
                 'total_loss': total_loss,
                 'accuracy': acc,
                 'recall': rec, 
                 'precision': prec,
-                'f1_score': f1
+                'f1_score': f1,
+                'num_imp_loss': num_imp_loss,
+                'cat_imp_loss': cat_imp_loss
             } 
 
 

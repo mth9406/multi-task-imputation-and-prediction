@@ -5,6 +5,7 @@ import argparse
 import torch
 import numpy as np
 import pandas as pd
+pd.set_option('display.max_columns', 20)
 import networkx as nx
 from matplotlib import pyplot as plt
 
@@ -42,7 +43,7 @@ parser.add_argument('--test_missing_prob', type= float, default= 0.1,
 parser.add_argument('--test_all_missing', action= 'store_true', 
                 help= 'force every observation in the test data to have missing values.')
 parser.add_argument('--test_n_missing', type= int, default= 1, 
-                help= 'the number of missing values to generate by row. (default= 1)')
+                help= 'the number of missing values to generate by row. (depreciated, it is auto-set)')
 # parser.add_argument("--cat_features", nargs="+", default= None, 
 #                 help= 'the indices of categorical features (list type, default= None)')
 
@@ -61,8 +62,9 @@ parser.add_argument('--kl_loss_penalty', type= float, default= 1.,
 # model options
 parser.add_argument('--model_path', type= str, default= './data/gesture/model',
                     help= 'a path to (save) the model')
-parser.add_argument('--num_layers', type= int, default= 3, 
+parser.add_argument('--num_layers', type= int, default= 4, 
                     help= 'the number of gcn layers')
+parser.add_argument('--auto_set_emb_size', action= 'store_true', help= 'auto set the embedding sizes')
 parser.add_argument('--node_emb_size', type= int, default= 64,
                     help= 'the size of node embedding')
 parser.add_argument('--edge_emb_size', type= int, default= 64,
@@ -89,6 +91,14 @@ parser.add_argument('--test_results_path', type= str, default= './test_results',
                     help= 'a path to save the results')
 
 args = parser.parse_args()
+
+# auto setting
+if args.auto_set_emb_size:
+    n = np.ceil(np.log2(args.input_size))
+    args.node_emb_size = n 
+    args.edge_emb_size = 2 
+    args.msg_emb_size = n
+
 print(args)
 
 # device

@@ -178,15 +178,17 @@ def train_valid_test_split(args, X, y, task_type= "cls"):
     X_train, X_valid, X_test\
         = torch.FloatTensor(X_train), torch.FloatTensor(X_valid), torch.FloatTensor(X_test)
     
-    X_train_tilde, X_valid_tilde, X_test_tilde = None, None, None
+    X_train_tilde, X_valid_tilde, X_test_tilde = X_train, X_valid, X_test
     
     if args.prob > 0.:
         X_train_tilde, _ = make_missing(X_train, args.prob)
         X_valid_tilde, _ = make_missing(X_valid, args.prob)
-        if args.test_all_missing:
-            X_test_tilde, _ = make_missing_by_row(X_test, args.test_n_missing)
-        else:
-            X_test_tilde, _ = make_missing(X_test, args.test_missing_prob)
+
+    if args.test_all_missing:
+        args.test_n_missing = int(np.ceil(p * args.test_missing_prob))
+        X_test_tilde, _ = make_missing_by_row(X_test, args.test_n_missing)
+    else:
+        X_test_tilde, _ = make_missing(X_test, args.test_missing_prob)
 
     if task_type == 'cls':
         y_train, y_valid, y_test\

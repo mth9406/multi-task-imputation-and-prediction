@@ -38,7 +38,7 @@ parser.add_argument('--prob', type= float, default= 0.1,
 parser.add_argument('--test_missing_prob', type= float, default= 0.1, 
                 help= 'the ratio of missing data to make in the original data')
 parser.add_argument('--test_all_missing', action= 'store_true', 
-                help= 'force every observation in the test data to have missing values.')
+                help= 'the number of missing values to generate by row. (depreciated, it is auto-set)')
 parser.add_argument('--test_n_missing', type= int, default= 1, 
                 help= 'the number of missing values to generate by row. (default= 1)')
 # parser.add_argument("--cat_features", nargs="+", default= None, 
@@ -57,7 +57,8 @@ parser.add_argument('--imp_loss_penalty', type= float, default= 1.,
 # model options
 parser.add_argument('--model_path', type= str, default= './data/gesture/model',
                     help= 'a path to (save) the model')
-parser.add_argument('--num_layers', type= int, default= 3, 
+parser.add_argument('--auto_set_emb_size', action= 'store_true', help= 'auto set the embedding sizes')
+parser.add_argument('--num_layers', type= int, default= 4, 
                     help= 'the number of gcn layers')
 parser.add_argument('--node_emb_size', type= int, default= 64,
                     help= 'the size of node embedding')
@@ -83,6 +84,14 @@ parser.add_argument('--test_results_path', type= str, default= './test_results',
                     help= 'a path to save the results')
 
 args = parser.parse_args()
+
+# auto setting
+if args.auto_set_emb_size:
+    n = np.ceil(np.log2(args.input_size))
+    args.node_emb_size = n 
+    args.edge_emb_size = 2 
+    args.msg_emb_size = n
+
 print(args)
 
 # device
@@ -130,12 +139,15 @@ def main(args):
             args.msg_emb_size, 
             args.edge_drop_p, 
             imp_loss_penalty= args.imp_loss_penalty,
-            device= device
+            device= device,
+            task_type= args.task_type
             ).to(device)
         # args.cat_features = None
     else:
         print("The model is yet to be implemented.")
         sys.exit()    
+    print('Model config')
+    print(f'task type: {model.task_type}')
 
     optimizer = optim.Adam(model.parameters(), args.lr)   
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, 10) 

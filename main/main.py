@@ -39,7 +39,7 @@ parser.add_argument('--test_missing_prob', type= float, default= 0.1,
 parser.add_argument('--test_all_missing', action= 'store_true', 
                 help= 'force every observation in the test data to have missing values.')
 parser.add_argument('--test_n_missing', type= int, default= 1, 
-                help= 'the number of missing values to generate by row. (default= 1)')
+                help= 'the number of missing values to generate by row. (depreciated, it is auto-set)')
 parser.add_argument("--cat_features", nargs="+", default= None, 
                 help= 'the indices of categorical features (list type, default= None)')
 
