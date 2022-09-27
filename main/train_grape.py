@@ -84,14 +84,6 @@ parser.add_argument('--test_results_path', type= str, default= './test_results',
                     help= 'a path to save the results')
 
 args = parser.parse_args()
-
-# auto setting
-if args.auto_set_emb_size:
-    n = np.ceil(np.log2(args.input_size))
-    args.node_emb_size = n 
-    args.edge_emb_size = 2 
-    args.msg_emb_size = n
-
 print(args)
 
 # device
@@ -125,6 +117,13 @@ def main(args):
             DataLoader(valid_data, batch_size = args.batch_size, shuffle = True, collate_fn= collate_fn),\
             DataLoader(test_data, batch_size = args.batch_size, shuffle = False, collate_fn= collate_fn)    
     
+    # auto setting
+    if args.auto_set_emb_size:
+        n = int(np.ceil(np.log2(args.input_size)))
+        args.node_emb_size = n 
+        args.edge_emb_size = 2 
+        args.msg_emb_size = n
+
     # model
     # input_size(=num_features), num_labels(n_labels), cat_vars_pos, numeric_vars_pos are obtaiend after loading the data
     if args.model_type == 'grape':

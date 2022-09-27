@@ -135,7 +135,7 @@ def main(args):
     # setting training args...
     if args.task_type == 'regr': 
         criterion = nn.MSELoss()
-    elif args.task_type == 'cls' and args.num_labels == 1: 
+    elif args.task_type == 'cls' and args.n_labels > 1: 
         criterion = nn.CrossEntropyLoss()
     else: 
         criterion = nn.BCELoss()

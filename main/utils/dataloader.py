@@ -181,8 +181,9 @@ def train_valid_test_split(args, X, y, task_type= "cls"):
     X_train_tilde, X_valid_tilde, X_test_tilde = X_train, X_valid, X_test
     
     if args.prob > 0.:
-        X_train_tilde, _ = make_missing(X_train, args.prob)
-        X_valid_tilde, _ = make_missing(X_valid, args.prob)
+        n = int(np.ceil(p * args.prob))
+        X_train_tilde, _ = make_missing_by_row(X_train, n)
+        X_valid_tilde, _ = make_missing_by_row(X_valid, n)
 
     if args.test_all_missing:
         args.test_n_missing = int(np.ceil(p * args.test_missing_prob))
@@ -842,10 +843,10 @@ def load_energy(args):
         data_file = os.path.join(args.data_path, 'ENB2012_data.xsl')
         data = pd.read_excel(data_file)
     data = data.dropna()
-    X, y = data.iloc[:, :-2], data.iloc[:,-2:]
+    X, y = data.iloc[:, :-2], data.iloc[:,-2]
     args.cat_vars_pos = []
     args.input_size = X.shape[1]
-    args.n_labels = 2
+    args.n_labels = 1
     print(data.info())
     print('-'*20)
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \

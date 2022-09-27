@@ -227,13 +227,13 @@ class Proposed(nn.Module):
             #     'x_imputed': out.get('x_imputed'),
             #     'x_impted_adj': out.get('x_imputed_adj'),
             #     'preds': out.get('preds'),
-                'cat_imp_loss': cat_imp_loss,
-                'num_imp_loss': num_imp_loss,
                 'label_loss': label_loss,
                 'total_loss': total_loss,
                 'r2':r2,
                 'mae':mae,
-                'mse':mse
+                'mse':mse,
+                'num_imp_loss': num_imp_loss,
+                'cat_imp_loss': cat_imp_loss
             } 
         # elif classification 
         # return accuracy, precision, f1-score, 
