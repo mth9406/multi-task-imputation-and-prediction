@@ -23,7 +23,7 @@ from layers.gnn_models import *
 from layers.gnn_layers import *
 from layers.proposed_model import *
 from utils.gnn_utils import get_prior_relation
-from main.utils.gnn_utils import get_prior_relation_by_tree
+from utils.gnn_utils import get_prior_relation_by_tree
 
 from utils.gnn_trainer import Trainer
 
