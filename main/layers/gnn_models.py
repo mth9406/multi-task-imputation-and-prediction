@@ -26,7 +26,8 @@ class Grape(nn.Module):
                 edge_drop_p:float = 0.3,
                 imp_loss_penalty:float = 0.01,
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
-                task_type: str = 'cls'
+                task_type: str = 'cls',
+                residual_stack: bool = False
                 ):
         super().__init__() 
         
@@ -53,6 +54,7 @@ class Grape(nn.Module):
         self.imp_loss_penalty = imp_loss_penalty
         self.device = device
         self.task_type = task_type
+        self.residual_stack = residual_stack
 
     def forward(self, x):
         if self.training:
@@ -65,12 +67,18 @@ class Grape(nn.Module):
         node_emb, edge_emb, feature_emb = self.gcn_block0(node_emb, edge_emb, feature_emb, edge_index)
         node_emb, edge_emb, feature_emb = torch.relu(node_emb), torch.relu(edge_emb), torch.relu(feature_emb)
 
-        for i in range(1, self.num_layers):
-            node_emb_b4, edge_emb_b4, feature_emb_b4 = node_emb.clone().detach(), edge_emb.clone().detach(), feature_emb.clone().detach()
-            node_emb, edge_emb, feature_emb = getattr(self, f'gcn_block{i}')(node_emb, edge_emb, feature_emb, edge_index)
-            node_emb, edge_emb, feature_emb \
-                = torch.relu(node_emb+node_emb_b4), torch.relu(edge_emb+edge_emb_b4), torch.relu(feature_emb+feature_emb_b4)
-        
+        if self.residual_stack:
+            for i in range(1, self.num_layers):
+                node_emb_b4, edge_emb_b4, feature_emb_b4 = node_emb.clone().detach(), edge_emb.clone().detach(), feature_emb.clone().detach()
+                node_emb, edge_emb, feature_emb = getattr(self, f'gcn_block{i}')(node_emb, edge_emb, feature_emb, edge_index)
+                node_emb, edge_emb, feature_emb \
+                    = torch.relu(node_emb+node_emb_b4), torch.relu(edge_emb+edge_emb_b4), torch.relu(feature_emb+feature_emb_b4)
+        else: 
+            for i in range(1, self.num_layers):
+                # /node_emb_b4, edge_emb_b4, feature_emb_b4 = node_emb.clone().detach(), edge_emb.clone().detach(), feature_emb.clone().detach()
+                node_emb, edge_emb, feature_emb = getattr(self, f'gcn_block{i}')(node_emb, edge_emb, feature_emb, edge_index)
+                node_emb, edge_emb, feature_emb \
+                    = torch.relu(node_emb), torch.relu(edge_emb), torch.relu(feature_emb)   
         d_hat = self.eph(node_emb, feature_emb)
 
         d_hat_adj = d_hat.clone().detach()

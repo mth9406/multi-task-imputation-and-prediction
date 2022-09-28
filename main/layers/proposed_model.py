@@ -28,8 +28,10 @@ class Proposed(nn.Module):
                 tau:float = 0.1,
                 imp_loss_penalty:float = 0.01,
                 kl_loss_penalty:float = 0.01,
+                relation_index = None, 
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
-                task_type: str = 'cls'
+                task_type: str = 'cls',
+                residual_stack: bool = False
                 ):
         super().__init__() 
         
@@ -39,7 +41,7 @@ class Proposed(nn.Module):
             setattr(self, f'gcn_block{i}', GCNBlock(node_emb_size, node_emb_size, edge_emb_size, edge_emb_size, msg_emb_size))
         self.reph = RelationalEdgePredictionHead(node_emb_size, num_features, device)
         self.nph = NodePredictionHead(num_features, num_labels)
-        self.gll = GraphLearningLayer(num_features, tau)
+        self.gll = AdaptiveGraphLearningLayer(num_features, relation_index, tau)
 
         self.mse_loss = nn.MSELoss()
         self.cls_loss = nn.CrossEntropyLoss()
@@ -57,8 +59,10 @@ class Proposed(nn.Module):
         self.tau = tau
         self.imp_loss_penalty = imp_loss_penalty
         self.kl_loss_penalty = kl_loss_penalty
+        self.relation_index = relation_index
         self.device = device
         self.task_type = task_type
+        self.residual_stack = residual_stack
 
     def forward(self, x):
         if self.training:
@@ -71,15 +75,24 @@ class Proposed(nn.Module):
         node_emb, edge_emb, feature_emb = self.gcn_block0(node_emb, edge_emb, feature_emb, edge_index)
         node_emb, edge_emb, feature_emb = torch.relu(node_emb), torch.relu(edge_emb), torch.relu(feature_emb)
 
-        for i in range(1, self.num_layers):
-            node_emb_b4, edge_emb_b4, feature_emb_b4 = node_emb.clone().detach(), edge_emb.clone().detach(), feature_emb.clone().detach()
-            node_emb, edge_emb, feature_emb = getattr(self, f'gcn_block{i}')(node_emb, edge_emb, feature_emb, edge_index)
-            node_emb, edge_emb, feature_emb \
-                = torch.relu(node_emb+node_emb_b4), torch.relu(edge_emb+edge_emb_b4), torch.relu(feature_emb+feature_emb_b4)
-        
+        if self.residual_stack:
+            for i in range(1, self.num_layers):
+                node_emb_b4, edge_emb_b4, feature_emb_b4 = node_emb.clone().detach(), edge_emb.clone().detach(), feature_emb.clone().detach()
+                node_emb, edge_emb, feature_emb = getattr(self, f'gcn_block{i}')(node_emb, edge_emb, feature_emb, edge_index)
+                node_emb, edge_emb, feature_emb \
+                    = torch.relu(node_emb+node_emb_b4), torch.relu(edge_emb+edge_emb_b4), torch.relu(feature_emb+feature_emb_b4)
+        else: 
+            for i in range(1, self.num_layers):
+                # /node_emb_b4, edge_emb_b4, feature_emb_b4 = node_emb.clone().detach(), edge_emb.clone().detach(), feature_emb.clone().detach()
+                node_emb, edge_emb, feature_emb = getattr(self, f'gcn_block{i}')(node_emb, edge_emb, feature_emb, edge_index)
+                node_emb, edge_emb, feature_emb \
+                    = torch.relu(node_emb), torch.relu(edge_emb), torch.relu(feature_emb)      
+
         out = self.gll(feature_emb)
         relation_index = out.get('relation_index')
         kl_loss = out.get('kl_loss')
+        # relation_index = self.relation_index 
+        # kl_loss = None
 
         d_hat = self.reph(node_emb, feature_emb, relation_index)
 

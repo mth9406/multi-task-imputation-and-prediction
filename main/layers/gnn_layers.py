@@ -6,6 +6,7 @@ import numpy as np
 # from torch_geometric.nn import MessagePassing
 
 from torch_scatter import scatter_add, scatter_mean, scatter_max, scatter_sum
+from torch_geometric.utils import to_dense_adj
 
 class Init(object): 
     r"""Initialize node features 
@@ -73,7 +74,22 @@ class EdgePredictionHead(nn.Module):
 
     def __init__(self, node_emb_size, num_features, device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
         super().__init__() 
-        self.decode = nn.Linear(2*node_emb_size, 1)
+        if node_emb_size//4 > 1: 
+            self.decode = nn.Sequential(
+                nn.Linear(2*node_emb_size, node_emb_size//2),
+                nn.BatchNorm1d(node_emb_size//2), 
+                nn.Linear(node_emb_size//2, node_emb_size//4), 
+                nn.BatchNorm1d(node_emb_size//4),
+                nn.Linear(node_emb_size//4, 1)
+                )
+        elif node_emb_size//2 > 1: 
+            self.decode = nn.Sequential(
+                nn.Linear(2*node_emb_size, node_emb_size//2),
+                nn.BatchNorm1d(node_emb_size//2), 
+                nn.Linear(node_emb_size//2, 1)
+                )         
+        else: 
+            self.decode = nn.Linear(2*node_emb_size, 1)
         self.node_emb_size = node_emb_size
         self.num_features = num_features
         self.device = device
@@ -191,11 +207,80 @@ class GraphLearningLayer(nn.Module):
             'kl_loss': kl_loss
         }
 
+def gumbel_sigmoid_sample(logits, tau=0.1, eps=1e-10):
+    gumbel_noise = sample_gumbel(logits.size(), eps=eps)
+    if logits.is_cuda:
+        gumbel_noise = gumbel_noise.cuda()
+    y = logits + Variable(gumbel_noise)
+    return torch.sigmoid(y / tau)
+
+def gumbel_sigmoid(logits, tau=1, hard=False, eps=1e-10):
+    y_soft = gumbel_sigmoid_sample(logits, tau=tau, eps=eps)
+    if hard:
+        return (y_soft > 0.5) * 1.
+    else:
+        y = y_soft
+    return y
+
+def prior_fitting_loss(probs, prior_adj, eps=1e-10): 
+    kl_div = -prior_adj * torch.log(probs + eps)
+    return kl_div.mean()
+
+class AdaptiveGraphLearningLayer(nn.Module): 
+
+    def __init__(self, num_features, prior_relation_index, tau= 0.1):
+        super().__init__() 
+        self.num_features = num_features
+        self.tau = tau
+        self.prior_relation_index = prior_relation_index
+        self.prior_adj = to_dense_adj(prior_relation_index)
+
+    def forward(self, feature_emb): 
+        # returns relationship between feature embeddings 
+        # transform the output by torch.nonzero into edge_index 
+        # relationship is computed as 
+        # 1) correlation 
+        # or 
+        # 2) sth else from the GRL book. 
+        # feature_emb: (num_features, node_emb_size)
+        logits = feature_emb@feature_emb.T # num_features, num_features
+        if self.training:
+            relation = gumbel_sigmoid(logits, self.tau, hard= False)
+            # relation = relation.fill_diagonal_(0.)
+            kl_loss = prior_fitting_loss(relation, self.prior_adj)
+        else: 
+            relation = gumbel_softmax(logits, self.tau, hard= True)
+            # relation = relation.fill_diagonal_(0.)
+            kl_loss = None
+        relation_index = torch.nonzero(relation).T
+        relation_index = relation_index.to(relation.device)
+        return {
+            'relation': relation,
+            'relation_index': relation_index,
+            'kl_loss': kl_loss
+        }
+
 class RelationalEdgePredictionHead(nn.Module): 
 
     def __init__(self, node_emb_size, num_features, device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
         super().__init__() 
-        self.decode = nn.Linear(2*node_emb_size, 1)
+        
+        if node_emb_size//4 > 1: 
+            self.decode = nn.Sequential(
+                nn.Linear(2*node_emb_size, node_emb_size//2),
+                nn.BatchNorm1d(node_emb_size//2), 
+                nn.Linear(node_emb_size//2, node_emb_size//4), 
+                nn.BatchNorm1d(node_emb_size//4),
+                nn.Linear(node_emb_size//4, 1)
+                )
+        elif node_emb_size//2 > 1: 
+            self.decode = nn.Sequential(
+                nn.Linear(2*node_emb_size, node_emb_size//2),
+                nn.BatchNorm1d(node_emb_size//2), 
+                nn.Linear(node_emb_size//2, 1)
+                )         
+        else: 
+            self.decode = nn.Linear(2*node_emb_size, 1)
         self.node_emb_size = node_emb_size
         self.num_features = num_features
         self.device = device

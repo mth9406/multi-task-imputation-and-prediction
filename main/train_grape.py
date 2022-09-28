@@ -53,6 +53,7 @@ parser.add_argument('--delta', type= float, default=0., help='significant improv
 parser.add_argument('--print_log_option', type= int, default= 10, help= 'print training loss every print_log_option')
 parser.add_argument('--imp_loss_penalty', type= float, default= 1., 
                     help= 'the penalty term of imputation loss')
+parser.add_argument('--T_max', type= int, default= 5, help= 'T_max of consine annealing scheduler')
 
 # model options
 parser.add_argument('--model_path', type= str, default= './data/gesture/model',
@@ -68,6 +69,7 @@ parser.add_argument('--msg_emb_size', type= int, default= 64,
                     help= 'the size of message embedding')
 parser.add_argument('--edge_drop_p', type= float, default= 0.3,
                     help= 'dropout ratio (default= 0.3)')
+parser.add_argument('--residual_stack', action= 'store_true', default= False)
 
 # To test
 parser.add_argument('--test', action='store_true', help='test')
@@ -121,7 +123,7 @@ def main(args):
     if args.auto_set_emb_size:
         n = int(np.ceil(np.log2(args.input_size)))
         args.node_emb_size = n 
-        args.edge_emb_size = 2 
+        args.edge_emb_size = 2
         args.msg_emb_size = n
 
     # model
@@ -139,7 +141,8 @@ def main(args):
             args.edge_drop_p, 
             imp_loss_penalty= args.imp_loss_penalty,
             device= device,
-            task_type= args.task_type
+            task_type= args.task_type,
+            residual_stack = args.residual_stack
             ).to(device)
         # args.cat_features = None
     else:
@@ -148,8 +151,8 @@ def main(args):
     print('Model config')
     print(f'task type: {model.task_type}')
 
-    optimizer = optim.Adam(model.parameters(), args.lr)   
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, 10) 
+    optimizer = optim.Adam(model.parameters(), args.lr, weight_decay= 0.01)    
+    # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max = args.T_max) 
     early_stopping = EarlyStopping(
         patience= args.patience,
         verbose= True,
@@ -168,7 +171,8 @@ def main(args):
         print('loading done!')
     else: 
         print('start training...')
-        trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, scheduler, device)
+        # trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, scheduler, device)
+        trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, device)
     
     print("==============================================")
     print("Testing the model...")  
