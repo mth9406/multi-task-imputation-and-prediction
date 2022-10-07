@@ -7,6 +7,7 @@ import numpy as np
 
 from torch_scatter import scatter_add, scatter_mean, scatter_max, scatter_sum
 from torch_geometric.utils import to_dense_adj
+from torch_geometric.nn import GATConv 
 
 class Init(object): 
     r"""Initialize node features 
@@ -54,15 +55,84 @@ class GCNBlock(nn.Module):
         msg = scatter_mean(msg, src, dim= 0) # bs, msg_emb_size  
 
         msg_f = torch.concat([node_emb[src], edge_emb], dim= 1) # num_edges, node_emb_size+edge_emb_size 
-        mgs_f = torch.relu(msg_f@self.P + self.b_P) # num_edge, msg_emb_size
-        mgs_f = scatter_mean(mgs_f, dst, dim= 0) # num_features, msg_emb_size 
+        msg_f = torch.relu(msg_f@self.P + self.b_P) # num_edge, msg_emb_size
+        msg_f = scatter_mean(msg_f, dst, dim= 0) # num_features, msg_emb_size 
         # the number of nodes = bs + num_features
 
         # node update 
         node_emb = torch.concat([node_emb, msg], dim=1)
         node_emb = node_emb@self.Q + self.b_Q # bs, node_emb_size 
-        feature_emb = torch.concat([feature_emb, mgs_f], dim=1)
+        feature_emb = torch.concat([feature_emb, msg_f], dim=1)
         feature_emb = feature_emb@self.Q + self.b_Q # num_features, node_emb_size 
+           
+        # edge update
+        edge_emb = torch.concat([edge_emb, node_emb[src], feature_emb[dst]], dim= 1)
+        edge_emb = edge_emb@self.W + self.b_W
+
+        return node_emb, edge_emb, feature_emb
+
+class GCNBlockVer2(nn.Module):
+    def __init__(self, in_node_emb_size, out_node_emb_size, in_edge_emb_size, out_edge_emb_size, msg_emb_size):
+        super().__init__()
+        
+        # define trainable parameters
+        self.P_src = nn.Parameter(torch.randn(size= (in_node_emb_size+in_edge_emb_size, msg_emb_size), requires_grad= True)) # for msg
+        self.b_P_src = nn.Parameter(torch.zeros(size= (msg_emb_size, ), requires_grad= True))
+        self.P_dst = nn.Parameter(torch.randn(size= (in_node_emb_size+in_edge_emb_size, msg_emb_size), requires_grad= True)) 
+        self.b_P_dst = nn.Parameter(torch.zeros(size= (msg_emb_size, ), requires_grad= True))
+
+        self.Q_src_self = nn.Parameter(torch.randn(size= (in_node_emb_size, out_node_emb_size), requires_grad= True)) # for node update
+        self.b_Q_src_self = nn.Parameter(torch.zeros(size= (out_node_emb_size,), requires_grad= True))
+        self.Q_src_neigh = nn.Parameter(torch.randn(size= (msg_emb_size, out_node_emb_size), requires_grad= True))
+        self.b_Q_src_neigh = nn.Parameter(torch.zeros(size= (out_node_emb_size,), requires_grad= True))
+        
+        self.Q_dst_self = nn.Parameter(torch.randn(size= (in_node_emb_size, out_node_emb_size), requires_grad= True)) 
+        self.b_Q_dst_self = nn.Parameter(torch.zeros(size= (out_node_emb_size,), requires_grad= True))
+        self.Q_dst_neigh = nn.Parameter(torch.randn(size= (msg_emb_size, out_node_emb_size), requires_grad= True))
+        self.b_Q_dst_neigh = nn.Parameter(torch.zeros(size= (out_node_emb_size,), requires_grad= True))
+
+        self.W = nn.Parameter(torch.randn(size= (in_edge_emb_size+out_node_emb_size+out_node_emb_size, out_edge_emb_size), requires_grad= True)) # for edge update
+        self.b_W = nn.Parameter(torch.zeros(size= (out_edge_emb_size, ), requires_grad= True))
+
+        self.init_params()
+        
+        self.in_node_emb_size = in_node_emb_size
+        self.out_node_emb_size = out_node_emb_size
+        self.in_edge_emb_size = in_edge_emb_size
+        self.out_edge_emb_size = out_edge_emb_size
+        self.msg_emb_size = msg_emb_size
+
+    def init_params(self): 
+        nn.init.xavier_normal_(self.P_src)
+        nn.init.xavier_normal_(self.P_dst)
+        nn.init.xavier_normal_(self.Q_src_self)
+        nn.init.xavier_normal_(self.Q_src_neigh)
+        nn.init.xavier_normal_(self.Q_dst_self)
+        nn.init.xavier_normal_(self.Q_dst_neigh)
+        nn.init.xavier_normal_(self.W)
+
+
+    def forward(self, node_emb, edge_emb, feature_emb, edge_index):
+        r"""
+        node_emb: node embedding (bs, node_emb_size)
+        edge_emb: edge embedding (num_edges, edge_emb_size)
+        feature_emb: feature embedding (num_features, node_emb_size)
+        edge_index: edge index (adj matrix in COO format) (2, num_edges)
+        """
+        src, dst = edge_index
+        # generate messages for observation update and feature update
+        msg = torch.concat([feature_emb[dst], edge_emb], dim= 1) # num_edges, node_emb_size+edge_emb_size 
+        msg = F.leaky_relu(msg@self.P_src + self.b_P_src) # num_edge, msg_emb_size
+        msg = scatter_mean(msg, src, dim= 0) # bs, msg_emb_size  
+
+        msg_f = torch.concat([node_emb[src], edge_emb], dim= 1) # num_edges, node_emb_size+edge_emb_size 
+        msg_f = F.leaky_relu(msg_f@self.P_dst + self.b_P_dst) # num_edge, msg_emb_size
+        msg_f = scatter_mean(msg_f, dst, dim= 0) # num_features, msg_emb_size 
+        # the number of nodes = bs + num_features
+
+        # node update 
+        node_emb =  node_emb@self.Q_src_self + self.b_Q_src_self + msg@self.Q_src_neigh + self.b_Q_src_neigh # bs, node_emb_size 
+        feature_emb =  feature_emb@self.Q_dst_self + self.b_Q_dst_self + msg_f@self.Q_dst_neigh + self.b_Q_dst_neigh # num_features, node_emb_size 
            
         # edge update
         edge_emb = torch.concat([edge_emb, node_emb[src], feature_emb[dst]], dim= 1)
@@ -78,14 +148,17 @@ class EdgePredictionHead(nn.Module):
             self.decode = nn.Sequential(
                 nn.Linear(2*node_emb_size, node_emb_size//2),
                 nn.BatchNorm1d(node_emb_size//2), 
-                nn.Linear(node_emb_size//2, node_emb_size//4), 
+                nn.LeakyReLU(),
+                nn.Linear(node_emb_size//2, node_emb_size//4),
                 nn.BatchNorm1d(node_emb_size//4),
+                nn.LeakyReLU(),
                 nn.Linear(node_emb_size//4, 1)
                 )
         elif node_emb_size//2 > 1: 
             self.decode = nn.Sequential(
                 nn.Linear(2*node_emb_size, node_emb_size//2),
                 nn.BatchNorm1d(node_emb_size//2), 
+                nn.LeakyReLU(),
                 nn.Linear(node_emb_size//2, 1)
                 )         
         else: 
@@ -135,7 +208,7 @@ def coo_to_adj(rel, num_objects, device= None):
         a square matrix of shape: num_object x num_object 
     """
 
-    adj = torch.zeros((num_objects*num_objects))
+    adj = torch.full((num_objects*num_objects,), -float("inf")+1.)
     for i in range(num_objects-1):
         adj[i*num_objects+i+1:(i+1)*num_objects+(i+1)] = rel[i*num_objects:(i+1)*num_objects]
     if device is not None:
@@ -174,30 +247,112 @@ def kl_categorical_uniform(preds, num_features, eps=1e-16):
     #     kl_div += const
     return -kl_div.sum() / (num_features * preds.size(0))  
 
+def encode_onehot(labels): 
+    r""" Encode some relational masks specifying which vertices receive messages from which other ones.
+    # Arguments          
+    ___________             
+    labels : np.array type 
+    
+    # Returns        
+    _________          
+    labels_one_hot : np.array type            
+        adjacency matrix
+    
+    # Example-usage       
+    _______________            
+    >>> labels = [0,0,0,1,1,1,2,2,2]
+    >>> labels_onehot = encode_onehot(labels)
+    >>> labels_onehot 
+    array(
+        [[1, 0, 0],
+         [1, 0, 0],             
+         [1, 0, 0],
+         [0, 1, 0],
+         [0, 1, 0],
+         [0, 1, 0],
+         [0, 0, 1],
+         [0, 0, 1],            
+         [0, 0, 1]], dtype=int32)      
+    """
+    classes = set(labels) 
+    classes_dict = {c: np.identity(len(classes))[i,:] for i, c in enumerate(classes)}
+    labels_onehot = np.array(list(map(classes_dict.get, labels)), dtype= np.int32)
+
+def generate_off_diag(num_objects, device= None): 
+    r"""Generates off-diagonal graph 
+    
+    # Arguments          
+    ___________                
+    num_objects : int
+        the number of objects               
+    device : torch.device     
+        device - cpu or cuda    
+
+    # Returns    
+    _________     
+    rel_rec : torch.FloatTensor    
+        relation-receiver     
+    rel_send : torch.FloatTensor    
+        relation-receiver     
+    """
+    off_diag = np.ones([num_objects, num_objects]) - np.eye(num_objects)
+
+    rec, send = np.where(off_diag)
+    rel_rec = np.array(encode_onehot(rec), dtype= np.float32)
+    rel_send = np.array(encode_onehot(send), dtype= np.float32)
+    
+    rel_rec = torch.FloatTensor(rel_rec) if device is None \
+        else torch.FloatTensor(rel_rec).to(device)
+    rel_send = torch.FloatTensor(rel_send) if device is None \
+        else torch.FloatTensor(rel_send).to(device)
+    
+    return rel_rec, rel_send
+
 class GraphLearningLayer(nn.Module): 
 
-    def __init__(self, num_features, tau= 0.1):
+    def __init__(self, num_features, 
+                in_feature_emb_size,            
+                out_feature_emb_size,
+                prior_relation_index,
+                tau= 0.1, device= torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
         super().__init__() 
         self.num_features = num_features
         self.tau = tau
+        self.device = device
+        self.prior_relation_index = prior_relation_index
+        self.prior_adj = to_dense_adj(prior_relation_index)
+
+        self.edge = self.get_edges_index()
+        # self.edge_id = torch.arange(num_features*(num_features-1)).to(device)
+        self.proj = nn.Linear(in_feature_emb_size, out_feature_emb_size)
+        self.node2edge = nn.Linear(2*out_feature_emb_size, out_feature_emb_size)
+        self.edge2node = nn.Linear(out_feature_emb_size, out_feature_emb_size)
+        self.node2edge2 = nn.Linear(2*out_feature_emb_size, out_feature_emb_size)
+        self.fc_out = nn.Linear(2*out_feature_emb_size, 1)
 
     def forward(self, feature_emb): 
-        # returns relationship between feature embeddings 
-        # transform the output by torch.nonzero into edge_index 
-        # relationship is computed as 
-        # 1) correlation 
-        # or 
-        # 2) sth else from the GRL book. 
-        # feature_emb: (num_features, node_emb_size)
-        logits = feature_emb@feature_emb.T # num_features, num_features
+        h = self.proj(feature_emb) # num_features, out_feature_emb_size
+        src, dst = self.edge
+        # (1) node to edge
+        h_e = F.leaky_relu(self.node2edge(torch.concat([h[src], h[dst]], axis=1))) # num_edges, out_feature_emb_size
+        h_e_skip = h_e
+        # (2) edge to node
+        h = F.leaky_relu(self.edge2node(scatter_mean(h_e, src, dim=0))) # num_features, out_feature_emb_size
+        # (3) node to edge
+        h_e = F.leaky_relu(self.node2edge2(torch.concat([h[src], h[dst]], axis=1))) # num_edges, out_feature_emb_size
+        
+        # (4) 
+        h_e = self.fc_out(torch.concat([h_e, h_e_skip], dim=1)) # num_edges, 1
+        logits = coo_to_adj(h_e.squeeze(), self.num_features, self.device)
+        
         if self.training:
-            relation = gumbel_softmax(logits, self.tau, hard= True)
-            relation = relation.fill_diagonal_(0.)
-            probs = torch.softmax(logits, dim= 1)
-            kl_loss = kl_categorical_uniform(probs, self.num_features)
+            relation = gumbel_sigmoid(logits, self.tau, hard= True)
+            # relation = relation.fill_diagonal_(0.)
+            probs = torch.sigmoid(logits)
+            kl_loss = prior_fitting_loss(probs, self.prior_adj)
         else: 
-            relation = gumbel_softmax(logits, self.tau, hard= True)
-            relation = relation.fill_diagonal_(0.)
+            relation = gumbel_sigmoid(logits, self.tau, hard= True)
+            # relation = relation.fill_diagonal_(0.)
             kl_loss = None
         relation_index = torch.nonzero(relation).T
         relation_index = relation_index.to(relation.device)
@@ -206,6 +361,11 @@ class GraphLearningLayer(nn.Module):
             'relation_index': relation_index,
             'kl_loss': kl_loss
         }
+
+    def get_edges_index(self): 
+        adj = torch.ones((self.num_features, self.num_features)) - torch.eye(self.num_features)
+        edges = (torch.nonzero(adj).T).to(self.device)
+        return edges
 
 def gumbel_sigmoid_sample(logits, tau=0.1, eps=1e-10):
     gumbel_noise = sample_gumbel(logits.size(), eps=eps)
@@ -260,6 +420,59 @@ class AdaptiveGraphLearningLayer(nn.Module):
             'kl_loss': kl_loss
         }
 
+class AttentionEdgePredictionHead(nn.Module): 
+
+    def __init__(self, node_emb_size, num_features, heads:int= 2, device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+        super().__init__() 
+        
+        self.gat = GATConv(node_emb_size, node_emb_size//2, heads= heads, add_self_loops= False)
+        msg_emb_size = (node_emb_size//2) * heads
+        in_channels = msg_emb_size + node_emb_size
+        if in_channels//4 > 1: 
+            self.decode = nn.Sequential(
+                nn.Linear(in_channels, in_channels//2),
+                nn.BatchNorm1d(in_channels//2), 
+                nn.LeakyReLU(),
+                nn.Linear(in_channels//2, in_channels//4), 
+                nn.BatchNorm1d(in_channels//4),
+                nn.LeakyReLU(),
+                nn.Linear(in_channels//4, 1)
+                )
+        elif in_channels//2 > 1: 
+            self.decode = nn.Sequential(
+                nn.Linear(in_channels, in_channels//2),
+                nn.BatchNorm1d(in_channels//2), 
+                nn.LeakyReLU(),
+                nn.Linear(in_channels//2, 1)
+                )         
+        else: 
+            self.decode = nn.Linear(in_channels, 1)
+
+        self.node_emb_size = node_emb_size
+        self.msg_emb_size = msg_emb_size
+        self.num_features = num_features
+        self.in_channels = in_channels
+        self.device = device
+
+    def forward(self, node_emb, feature_emb, relation_index):
+        
+        bs = node_emb.shape[0]
+        src, dst = self.get_edges_index(bs)
+        
+        msg = self.gat(feature_emb, relation_index)
+        msg = torch.concat([node_emb[src], msg[dst]], dim= -1) # num_edges, msg_emb_size+node_emb_size
+        msg = self.decode(msg)
+
+        return msg.reshape(-1, self.num_features)
+
+    def get_edges_index(self, bs): 
+        nodes = torch.arange(bs) 
+        features = torch.arange(self.num_features) 
+        src = nodes.repeat_interleave(self.num_features).to(self.device)
+        dst = features.repeat(bs).to(self.device)
+
+        return src, dst
+
 class RelationalEdgePredictionHead(nn.Module): 
 
     def __init__(self, node_emb_size, num_features, device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
@@ -287,11 +500,11 @@ class RelationalEdgePredictionHead(nn.Module):
 
     def forward(self, node_emb, feature_emb, relation_index):
         bs = node_emb.shape[0]
-        src_neigh, dst_neigh, agg_by = self.get_neighbors(relation_index, bs)  
+        src, dst, src_neigh, dst_neigh, agg_by = self.get_neighbors(relation_index, bs)  
 
-        msg = torch.concat([node_emb[src_neigh], feature_emb[dst_neigh]], dim= -1)      
+        msg = scatter_mean(feature_emb[dst_neigh], agg_by, dim= 0) # num_edges (=bs*num_features), feature_emb_size
+        msg = torch.concat([node_emb[src], msg], dim= -1)     
         msg = self.decode(msg)
-        msg = scatter_mean(msg, agg_by, dim= 0)
 
         return msg.reshape(-1, self.num_features)
 
@@ -316,4 +529,4 @@ class RelationalEdgePredictionHead(nn.Module):
         src_neigh, dst_neigh, agg_by =\
             torch.tensor(src_neigh).to(self.device),torch.tensor(dst_neigh).to(self.device),torch.tensor(agg_by).to(self.device)
         
-        return src_neigh, dst_neigh, agg_by
+        return src, dst, src_neigh, dst_neigh, agg_by

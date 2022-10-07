@@ -26,6 +26,7 @@ class Proposed(nn.Module):
                 msg_emb_size:int = 64,
                 edge_drop_p:float = 0.3,
                 tau:float = 0.1,
+                heads:int = 2,
                 imp_loss_penalty:float = 0.01,
                 kl_loss_penalty:float = 0.01,
                 relation_index = None, 
@@ -36,16 +37,16 @@ class Proposed(nn.Module):
         super().__init__() 
         
         self.init = Init(num_features, device= device)
-        self.gcn_block0 = GCNBlock(num_features, node_emb_size, 1, edge_emb_size, msg_emb_size)
+        self.gcn_block0 = GCNBlockVer2(num_features, node_emb_size, 1, edge_emb_size, msg_emb_size)
         for i in range(1, num_layers): 
-            setattr(self, f'gcn_block{i}', GCNBlock(node_emb_size, node_emb_size, edge_emb_size, edge_emb_size, msg_emb_size))
-        self.reph = RelationalEdgePredictionHead(node_emb_size, num_features, device)
+            setattr(self, f'gcn_block{i}', GCNBlockVer2(node_emb_size, node_emb_size, edge_emb_size, edge_emb_size, msg_emb_size))
+        self.gll = AdaptiveGraphLearningLayer(num_features, relation_index, tau=tau)
+        self.reph = AttentionEdgePredictionHead(node_emb_size, num_features, heads, device)
         self.nph = NodePredictionHead(num_features, num_labels)
-        self.gll = AdaptiveGraphLearningLayer(num_features, relation_index, tau)
 
         self.mse_loss = nn.MSELoss()
         self.cls_loss = nn.CrossEntropyLoss()
-        self.bce_loss = nn.BCEWithLogitsLoss()
+        self.bce_loss = nn.BCELoss()
 
         self.num_layers = num_layers
         self.edge_drop_p = edge_drop_p
@@ -57,6 +58,7 @@ class Proposed(nn.Module):
         self.cat_vars_pos = cat_vars_pos
         self.numeric_vars_pos = numeric_vars_pos
         self.tau = tau
+        self.heads = heads
         self.imp_loss_penalty = imp_loss_penalty
         self.kl_loss_penalty = kl_loss_penalty
         self.relation_index = relation_index
@@ -65,29 +67,33 @@ class Proposed(nn.Module):
         self.residual_stack = residual_stack
 
     def forward(self, x):
-        if self.training:
-            edge_index, edge_emb = dropout_adj(x['edge_index'], x['edge_value'], p= self.edge_drop_p)
-        else: 
-            edge_index, edge_emb = x['edge_index'], x['edge_value']
+        edge_index, edge_emb = x['edge_index'], x['edge_value']
         edge_emb = edge_emb[:, None]
         node_emb, feature_emb = self.init(x['x'].shape[0])
 
         node_emb, edge_emb, feature_emb = self.gcn_block0(node_emb, edge_emb, feature_emb, edge_index)
-        node_emb, edge_emb, feature_emb = torch.relu(node_emb), torch.relu(edge_emb), torch.relu(feature_emb)
-
+        node_emb, edge_emb, feature_emb = F.leaky_relu(node_emb), F.leaky_relu(edge_emb), F.leaky_relu(feature_emb)
+        # node_emb, edge_emb, feature_emb = self.normalize_emb(node_emb, edge_emb, feature_emb)
         if self.residual_stack:
             for i in range(1, self.num_layers):
                 node_emb_b4, edge_emb_b4, feature_emb_b4 = node_emb.clone().detach(), edge_emb.clone().detach(), feature_emb.clone().detach()
                 node_emb, edge_emb, feature_emb = getattr(self, f'gcn_block{i}')(node_emb, edge_emb, feature_emb, edge_index)
                 node_emb, edge_emb, feature_emb \
-                    = torch.relu(node_emb+node_emb_b4), torch.relu(edge_emb+edge_emb_b4), torch.relu(feature_emb+feature_emb_b4)
+                    = F.leaky_relu(node_emb+node_emb_b4), F.leaky_relu(edge_emb+edge_emb_b4), F.leaky_relu(feature_emb+feature_emb_b4)
+                # node_emb, edge_emb, feature_emb = self.normalize_emb(node_emb, edge_emb, feature_emb)
         else: 
             for i in range(1, self.num_layers):
                 # /node_emb_b4, edge_emb_b4, feature_emb_b4 = node_emb.clone().detach(), edge_emb.clone().detach(), feature_emb.clone().detach()
                 node_emb, edge_emb, feature_emb = getattr(self, f'gcn_block{i}')(node_emb, edge_emb, feature_emb, edge_index)
                 node_emb, edge_emb, feature_emb \
-                    = torch.relu(node_emb), torch.relu(edge_emb), torch.relu(feature_emb)      
+                    = F.leaky_relu(node_emb), F.leaky_relu(edge_emb), F.leaky_relu(feature_emb)   
+                # node_emb, edge_emb, feature_emb = self.normalize_emb(node_emb, edge_emb, feature_emb)   
 
+        # # normalize embedding vectors 
+        node_emb, edge_emb, feature_emb = self.normalize_emb(node_emb, edge_emb, feature_emb)
+
+        if self.training:
+            edge_index, edge_emb = dropout_adj(edge_index, edge_emb, p= self.edge_drop_p)
         out = self.gll(feature_emb)
         relation_index = out.get('relation_index')
         kl_loss = out.get('kl_loss')
@@ -99,8 +105,10 @@ class Proposed(nn.Module):
         d_hat_adj = d_hat.clone().detach()
         if len(self.cat_vars_pos) > 0: 
             d_hat_adj[:, self.cat_vars_pos] = torch.sigmoid(d_hat_adj[:, self.cat_vars_pos]) 
+        if len(self.numeric_vars_pos) > 0: 
+            d_hat_adj[:, self.numeric_vars_pos] = torch.tanh(d_hat_adj[:, self.numeric_vars_pos])
         d_hat_adj[x['mask']==1] = x['x'][x['mask'] == 1]
-        y_hat = self.nph(d_hat_adj)
+        y_hat = self.nph(d_hat_adj) if self.training else self.nph(x['x_complete'])
 
         return {
             'x_imputed': d_hat,
@@ -109,6 +117,13 @@ class Proposed(nn.Module):
             'kl_loss': kl_loss,
             'relation_index': relation_index
         }
+    
+    def normalize_emb(self, node_emb, edge_emb, feature_emb): 
+        # normalize embedding vectors 
+        node_emb = node_emb / torch.norm(node_emb, p= 2, dim= 1, keepdim= True)
+        edge_emb = edge_emb / torch.norm(edge_emb, p= 2, dim= 1, keepdim= True)
+        feature_emb = feature_emb / torch.norm(feature_emb, p= 2, dim= 1, keepdim= True)
+        return node_emb, edge_emb, feature_emb
 
     def train_step(self, batch): 
         # returns the training loss 
@@ -117,21 +132,21 @@ class Proposed(nn.Module):
         out = self.forward(batch)
 
         if self.task_type == 'regr': 
-            label_loss = self.mse_loss(out['preds'], batch['y'])
+            label_loss = self.mse_loss(torch.tanh(out['preds']), batch['y'])
         elif self.task_type == 'cls' and self.num_labels == 1: 
-            label_loss = self.bce_loss(out['preds'], batch['y'])
+            label_loss = self.bce_loss(torch.sigmoid(out['preds']), batch['y'])
         else: 
             label_loss = self.cls_loss(out['preds'], batch['y'])
         
         total_loss = label_loss
         
         if len(self.cat_vars_pos) > 0:
-            cat_imp_loss = self.bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
+            cat_imp_loss = self.bce_loss(torch.sigmoid(out['x_imputed'][:, self.cat_vars_pos]), batch['x_complete'][:, self.cat_vars_pos])
             total_loss += self.imp_loss_penalty * cat_imp_loss
         else: 
             cat_imp_loss = float('nan')
         if len(self.numeric_vars_pos) > 0: 
-            num_imp_loss = self.mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
+            num_imp_loss = self.mse_loss(torch.tanh(out['x_imputed'][:, self.numeric_vars_pos]), batch['x_complete'][:, self.numeric_vars_pos])
             total_loss += self.imp_loss_penalty * num_imp_loss
         else: 
             num_imp_loss = float('nan')
@@ -159,26 +174,26 @@ class Proposed(nn.Module):
         out = self.forward(batch)
 
         if self.task_type == 'regr': 
-            label_loss = self.mse_loss(out['preds'], batch['y'])
+            label_loss = self.mse_loss(torch.tanh(out['preds']), batch['y'])
         elif self.task_type == 'cls' and self.num_labels == 1: 
-            label_loss = self.bce_loss(out['preds'], batch['y'])
+            label_loss = self.bce_loss(torch.sigmoid(out['preds']), batch['y'])
         else: 
             label_loss = self.cls_loss(out['preds'], batch['y'])
         
         total_loss = label_loss
         
         if len(self.cat_vars_pos) > 0:
-            cat_imp_loss = self.bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
+            cat_imp_loss = self.bce_loss(torch.sigmoid(out['x_imputed'][:, self.cat_vars_pos]), batch['x_complete'][:, self.cat_vars_pos])
             total_loss += self.imp_loss_penalty * cat_imp_loss
         else: 
             cat_imp_loss = float('nan')
         if len(self.numeric_vars_pos) > 0: 
-            num_imp_loss = self.mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
+            num_imp_loss = self.mse_loss(torch.tanh(out['x_imputed'][:, self.numeric_vars_pos]), batch['x_complete'][:, self.numeric_vars_pos])
             total_loss += self.imp_loss_penalty * num_imp_loss
         else: 
             num_imp_loss = float('nan')
 
-        if out['kl_loss'] is not None: 
+        if out.get('kl_loss') is not None: 
             kl_loss = out.get('kl_loss')
             total_loss += self.kl_loss_penalty * kl_loss
         else: 
@@ -202,22 +217,22 @@ class Proposed(nn.Module):
         out = self.forward(batch)
 
         if self.task_type == 'regr': 
-            label_loss = self.mse_loss(out['preds'], batch['y'])
+            label_loss = self.mse_loss(torch.tanh(out['preds']), batch['y'])
         elif self.task_type == 'cls' and self.num_labels == 1: 
-            label_loss = self.bce_loss(out['preds'], batch['y'])
+            label_loss = self.bce_loss(torch.sigmoid(out['preds']), batch['y'])
         else: 
             label_loss = self.cls_loss(out['preds'], batch['y'])
         
         total_loss = label_loss
         
         if len(self.numeric_vars_pos) > 0:
-            num_imp_loss = self.mse_loss(out['x_imputed'][:, self.numeric_vars_pos], batch['x_complete'][:, self.numeric_vars_pos])
+            num_imp_loss = self.mse_loss(torch.tanh(out['x_imputed'][:, self.numeric_vars_pos]), batch['x_complete'][:, self.numeric_vars_pos])
             total_loss += num_imp_loss
             num_imp_loss = num_imp_loss.detach().cpu().numpy()
         else: 
             num_imp_loss = float('nan')
         if len(self.cat_vars_pos) > 0: 
-            cat_imp_loss = self.bce_loss(out['x_imputed'][:, self.cat_vars_pos], batch['x_complete'][:, self.cat_vars_pos])
+            cat_imp_loss = self.bce_loss(torch.sigmoid(out['x_imputed'][:, self.cat_vars_pos]), batch['x_complete'][:, self.cat_vars_pos])
             total_loss += cat_imp_loss
             cat_imp_loss = cat_imp_loss.detach().cpu().numpy()
         else: 

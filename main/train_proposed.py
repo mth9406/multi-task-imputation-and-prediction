@@ -59,7 +59,7 @@ parser.add_argument('--delta', type= float, default=0., help='significant improv
 parser.add_argument('--print_log_option', type= int, default= 10, help= 'print training loss every print_log_option')
 parser.add_argument('--imp_loss_penalty', type= float, default= 1., 
                     help= 'the penalty term of imputation loss')
-parser.add_argument('--kl_loss_penalty', type= float, default= 1., 
+parser.add_argument('--kl_loss_penalty', type= float, default= 0.01, 
                     help= 'the penalty term of kl loss')
 parser.add_argument('--T_max', type= int, default= 5, help= 'T_max of consine annealing scheduler')
 
@@ -80,6 +80,7 @@ parser.add_argument('--edge_drop_p', type= float, default= 0.3,
 parser.add_argument('--tau', type= float, default= 0.1,
                     help= 'tau (default: 0.1)')
 parser.add_argument('--residual_stack', action= 'store_true', default= False)
+parser.add_argument('--heads', type= int, default= 2, help= 'the number of heads in the GAT layer')
 
 # To test
 parser.add_argument('--test', action='store_true', help='test')
@@ -131,13 +132,14 @@ def main(args):
 
     # auto setting
     if args.auto_set_emb_size:
-        n = int(np.ceil(np.log2(args.input_size)))
-        args.node_emb_size = n
-        args.edge_emb_size = 2
+        n = 2**int(np.ceil(np.log2(args.input_size))-1)
+        args.node_emb_size = n 
+        args.edge_emb_size = n
         args.msg_emb_size = n
 
     # obtain prior relation 
     relation_index = get_prior_relation_by_tree(X_train.numpy(), args.numeric_vars_pos, args.cat_vars_pos, device= device)
+    # relation_index = (torch.nonzero(torch.ones((args.input_size, args.input_size)) - torch.eye(args.input_size)).T).to(device)
 
     # model
     # input_size(=num_features), num_labels(n_labels), cat_vars_pos, numeric_vars_pos are obtaiend after loading the data
@@ -153,6 +155,7 @@ def main(args):
             args.msg_emb_size, 
             args.edge_drop_p, 
             tau = args.tau,
+            heads= args.heads,
             imp_loss_penalty = args.imp_loss_penalty,
             kl_loss_penalty = args.kl_loss_penalty,
             relation_index = relation_index,
@@ -165,7 +168,7 @@ def main(args):
         print("The model is yet to be implemented.")
         sys.exit()    
 
-    optimizer = optim.Adam(model.parameters(), args.lr, weight_decay= 0.01)    
+    optimizer = optim.Adam(model.parameters(), args.lr)    
     # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, args.T_max) 
     early_stopping = EarlyStopping(
         patience= args.patience,
@@ -243,6 +246,6 @@ if __name__ == '__main__':
 
     perfs_path = os.path.join(args.test_results_path, f'{args.model_type}/{args.data_type}')
     os.makedirs(perfs_path, exist_ok= True)
-    pefs_df_file = os.path.join(perfs_path, f'{args.model_type}_missing_{args.test_missing_prob}.csv')
+    pefs_df_file = os.path.join(perfs_path, f'{args.model_type}_missing_{args.test_n_missing}_{args.test_missing_prob}.csv')
     perfs_df.to_csv(pefs_df_file)
     print(perfs_df.tail())

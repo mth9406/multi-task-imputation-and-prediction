@@ -181,12 +181,12 @@ def train_valid_test_split(args, X, y, task_type= "cls"):
     X_train_tilde, X_valid_tilde, X_test_tilde = X_train, X_valid, X_test
     
     if args.prob > 0.:
-        n = int(np.ceil(p * args.prob))
-        X_train_tilde, _ = make_missing_by_row(X_train, n)
-        X_valid_tilde, _ = make_missing_by_row(X_valid, n)
+        # n = int(np.ceil(p * args.prob))
+        X_train_tilde, _ = make_missing(X_train, args.prob)
+        X_valid_tilde, _ = make_missing(X_valid, args.prob)
 
     if args.test_all_missing:
-        args.test_n_missing = int(np.ceil(p * args.test_missing_prob))
+        # args.test_n_missing = int(np.ceil(p * args.test_missing_prob))
         X_test_tilde, _ = make_missing_by_row(X_test, args.test_n_missing)
     else:
         X_test_tilde, _ = make_missing(X_test, args.test_missing_prob)
@@ -897,6 +897,40 @@ def load_yacht(args):
 
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
+def load_insurance(args):
+    r"""
+    A function to load insurance-data.
+    
+    # Parameters
+    args contains the followings...
+    * data_path: a path to gesture-data
+    * tr: the ratio of training data to the original data
+    * val: the ratio of validation data to the original data
+    remaining is the test data so, tr+val < 1.
+
+    # Returns
+    X_train, X_valid, X_test, y_train, y_valid, y_test (torch.FloatTensor for "X", torch.FloatTensor for "y")    
+    """
+    data_file = os.path.join(args.data_path, 'insurance.csv')
+    df = pd.read_csv(data_file)
+
+    df = df.dropna()
+    y = df['charges']
+    df_num = df[['age', 'bmi' ,'children']]
+    df_cat = pd.get_dummies(df[['sex','smoker','region']], drop_first= True)
+    X = pd.concat([df_num, df_cat], axis= 1)
+
+    args.cat_vars_pos = [i for i in range(3, df_cat.shape[1]+3)]
+    args.input_size = X.shape[1]
+    args.n_labels= 1 
+
+    print(df.info())
+    print('-'*20)
+    X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
+        = train_valid_test_split(args, X, y, task_type= 'regr')
+
+    return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
+
 def load_data(args): 
 
     print("Loading data...")
@@ -995,6 +1029,10 @@ def load_data(args):
         X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde\
             = load_yacht(args)        
         task_type= 'regr'            
+    elif args.data_type == 'insurance': 
+        X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde\
+            = load_insurance(args)        
+        task_type= 'regr'         
     else: 
         print("Unkown data type, data type should be one of the followings...")
         print("gesture, elec, wind, mobile, wine, appliances, pulsar, faults, abalone, spam, letter")
