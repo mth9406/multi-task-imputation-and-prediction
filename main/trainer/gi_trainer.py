@@ -82,6 +82,52 @@ class GraphImputerTrainer:
             if early_stopping.early_stop:
                 break  
 
+    def pretrain_graph(self, args, model, 
+                optimizer, 
+                device= torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+
+        model.train()
+        for epoch in range(args.pretrain_epoch):    
+            # training loop
+            with torch.set_grad_enabled(True): 
+                tr_loss = getattr(model, 'graph_sampling').train_step()['total_loss']
+                model.zero_grad()
+                optimizer.zero_grad()
+                tr_loss.backward()
+                optimizer.step() 
+    
+            if epoch % self.print_every == 0:
+                prefix = f'Epoch [{epoch+1}/{args.pretrain_epoch}]'
+                print(f'{prefix}: training loss= {tr_loss.detach().cpu().item():.6f}')
+
+    def pretrain_task(self, args, model, 
+                train_loader, valid_loader,  
+                optimizer,
+                device= torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+
+        for epoch in range(args.pretrain_epoch): 
+            training_loss, validation_loss = [], []
+            training_weights, validation_weights = [], []             
+            # training loop
+            model.train()
+            for batch_idx, batch in enumerate(train_loader): 
+                for k, v in batch.items(): 
+                    batch[k] = batch[k].to(device)
+                num_batches = batch['complete_input'].shape[0]
+                with torch.set_grad_enabled(True): 
+                    tr_loss = getattr(model, 'prediction_head').train_step(batch)['total_loss']
+                    model.zero_grad()
+                    optimizer.zero_grad()
+                    tr_loss.backward()
+                    optimizer.step() 
+                training_loss.append(tr_loss.detach().cpu().item())
+                training_weights.append(num_batches)
+
+            training_loss = np.average(training_loss, weights = training_weights)
+            if epoch % self.print_every == 0:
+                prefix = f'Epoch [{epoch+1}/{args.pretrain_epoch}]'
+                print(f'{prefix}: training loss= {training_loss:.6f}')
+
     def test(self, args, model, test_loader, device= torch.device('cuda' if torch.cuda.is_available() else 'cpu')): 
         perfs = {}        
         weights = []

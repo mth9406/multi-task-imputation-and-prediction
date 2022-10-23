@@ -38,7 +38,8 @@ def get_prior_relation_by_tree(X,
 
     n, p = X.shape 
     adj_mat = np.zeros((p,p))
-
+    # select features that have importance greater than average
+    # feature importance = mean decrease in impurity
     for i in range(p): 
         col_index = np.full((p,), True) 
         col_index[i] = False

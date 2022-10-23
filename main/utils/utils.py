@@ -166,7 +166,7 @@ def save_relation_adj(relation_adj, args, additional_info:str= 'posterior'):
         }
     G = nx.from_pandas_adjacency(relation_adj, create_using=nx.DiGraph)
     G = nx.DiGraph(G)
-    pos = nx.kamada_kawai_layout(G)
+    pos = nx.shell_layout(G,)
     nx.draw_networkx(G, pos=pos, **options)
     plt.savefig(graph_file, format="PNG")
     plt.close('all')  

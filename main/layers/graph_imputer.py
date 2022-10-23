@@ -75,6 +75,46 @@ class GraphConvolutionLayer(nn.Module):
         else: 
             return self.act_func(res+x)
 
+class PredictionHead(nn.Module): 
+
+    def __init__(self, in_features:int, out_features:int, numeric_vars_pos:list, cat_vars_pos:list, task_type:str): 
+        super().__init__() 
+        self.w = nn.Parameter(torch.randn((in_features, out_features), requires_grad= True))
+        self.b = nn.Parameter(torch.zeros((out_features, ), requires_grad = True))
+
+        self.init_params()
+
+        self.numeric_vars_pos = numeric_vars_pos
+        self.cat_vars_pos = cat_vars_pos
+        self.vars_pos = numeric_vars_pos + cat_vars_pos
+        self.task_type = task_type
+
+    def init_params(self): 
+        nn.init.xavier_normal_(self.w)
+    
+    def forward(self, x, adj_mat= None): 
+        if adj_mat is None: 
+            return x[:, self.vars_pos]@self.w + self.b
+        else: 
+            return x[:, self.vars_pos]@(self.w*adj_mat) + self.b
+    
+    def train_step(self, batch): 
+        batch_x, batch_mask = batch.get('complete_input'), batch.get('mask')
+        y_hat = self.forward(batch_x)
+        prediction_loss = F.mse_loss(y_hat.ravel(), batch.get('label')) if self.task_type == 'regr' else F.cross_entropy(y_hat, batch.get('label'))
+        return {
+            'total_loss': prediction_loss
+        }
+
+    @torch.no_grad()
+    def val_step(self, batch): 
+        batch_x, batch_mask = batch.get('complete_input'), batch.get('mask')
+        y_hat = self.forward(batch_x)
+        prediction_loss = F.mse_loss(y_hat.ravel(), batch.get('label')) if self.task_type == 'regr' else F.cross_entropy(y_hat, batch.get('label'))
+        return {
+            'total_loss': prediction_loss
+        }
+
 # Proposed model 
 class GraphImputer(nn.Module):
     def __init__(self, 
@@ -105,7 +145,7 @@ class GraphImputer(nn.Module):
         setattr(self, f'gc{num_layers-1}', GraphConvolutionLayer(num_features, None))
 
         # prediction layer 
-        self.fc_out = nn.Linear(num_features, num_labels)
+        self.prediction_head = PredictionHead(num_features, num_labels, numeric_vars_pos, cat_vars_pos, task_type)
 
         # loss
         self.mse_loss = nn.MSELoss()
@@ -157,12 +197,9 @@ class GraphImputer(nn.Module):
         elif batch_x_recon_num is not None and batch_x_recon_cat is None: 
             batch_x_hat = batch_x_recon_num
 
-        if not self.training:
-            y_hat = self.fc_out(batch_x_hat) if self.task_type == 'cls' else self.fc_out(batch_x_hat).ravel()
-        else: 
-            y_hat = self.fc_out(batch.get('complete_input')[:, self.numeric_vars_pos + self.cat_vars_pos]) 
-            if self.task_type == 'regr': 
-                y_hat = y_hat.ravel()
+        y_hat = self.prediction_head(batch.get('complete_input')[:, self.numeric_vars_pos + self.cat_vars_pos]) 
+        if self.task_type == 'regr': 
+            y_hat = y_hat.ravel()
         
         return {
             'x_recon_num': batch_x_recon_num,

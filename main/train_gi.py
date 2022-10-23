@@ -141,22 +141,15 @@ def main(args):
     # save the prior adjacency matrix 
     save_relation_adj(prior_adj.detach().cpu().numpy().T, args, 'prior')    
 
-    pretrainer = GraphSamplerTrainer(args.print_log_option)
+    trainer = GraphImputerTrainer(args.training_missing_prob, args.print_log_option)
     optimizer = optim.Adam(model.parameters(), args.lr) 
-    print('start pretraining...')
-    pretrainer(args, model, optimizer, device)
-    print('pretraining done')
-
-    optimizer = optim.Adam(model.parameters(), args.lr)  
     early_stopping = EarlyStopping(
         patience= args.patience,
         verbose= True,
         delta = args.delta,
         path= args.model_path,
         model_name= args.model_name
-    ) 
-
-    trainer = GraphImputerTrainer(args.training_missing_prob, args.print_log_option)
+    )     
 
     if args.test: 
         print('loading the saved model')
@@ -165,6 +158,14 @@ def main(args):
         model.load_state_dict(ckpt['state_dict'])
         print('loading done!')
     else: 
+        print('start pretraining graph...')
+        trainer.pretrain_graph(args, model, optimizer, device)
+        print('pretraining done')
+
+        print('start pretraining downstream task...')
+        trainer.pretrain_task(args, model, train_loader, valid_loader, optimizer, device)
+        print('pretraining done')
+
         print('start training...')
         # trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, scheduler, device)
         trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, device= device)
@@ -182,30 +183,6 @@ def main(args):
     
     save_relation_adj(model.get_adj().T, args, 'posterior')
     print('saving the graph done!')
-    # relation_adj = model.get_adj()
-    # print('saving a relation graph...')
-    # plt.figure(figsize =(30,30))
-    # graph_path = os.path.join(args.test_results_path, f'{args.model_type}/{args.data_type}')
-    # os.makedirs(graph_path, exist_ok= True)
-    # graph_file = os.path.join(graph_path, f'relation_graph_{args.data_type}.png')
-    # relation_adj = pd.DataFrame(relation_adj, columns = args.column_names, index= args.column_names)
-    # relation_adj.to_csv(os.path.join(graph_path, f'graph_{args.data_type}.csv'))
-    # options = {
-    #         'node_color': 'skyblue',
-    #         'node_size': 3000,
-    #         'width': 0.5 ,
-    #         'arrowstyle': '-|>',
-    #         'arrowsize': 20,
-    #         'alpha' : 1,
-    #         'font_size' : 15
-    #     }
-    # G = nx.from_pandas_adjacency(relation_adj, create_using=nx.DiGraph)
-    # G = nx.DiGraph(G)
-    # pos = nx.kamada_kawai_layout(G)
-    # nx.draw_networkx(G, pos=pos, **options)
-    # plt.savefig(graph_file, format="PNG")
-    # plt.close('all')  
-    
 
     return perfs
 
