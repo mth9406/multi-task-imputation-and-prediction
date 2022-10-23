@@ -9,6 +9,8 @@ from torch_scatter import scatter_add, scatter_mean, scatter_max, scatter_sum
 from torch_geometric.utils import to_dense_adj
 from torch_geometric.nn import GATConv 
 
+from fancyimpute import SoftImpute
+
 class Init(object): 
     r"""Initialize node features 
     returns node_features and edge_features  
@@ -22,6 +24,20 @@ class Init(object):
 
     def __call__(self, batch_size): 
         return self.const_vector.repeat((batch_size,1)), self.onehot_vector
+
+class InitLNF():
+    r"""Initialize node features 
+    returns node_features and edge_features 
+    """
+    def __init__(self, num_features, device= torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+        super().__init__() 
+        self.num_features = num_features 
+        self.onehot_vector = torch.eye(num_features, requires_grad= False).to(device)
+        self.device = device 
+
+    def __call__(self, batch_size, x): 
+        node_feature = torch.FloatTensor(SoftImpute(verbose= False).fit_transform(x.detach().cpu())).to(self.device)
+        return node_feature, self.onehot_vector
 
 class GCNBlock(nn.Module):
     def __init__(self, in_node_emb_size, out_node_emb_size, in_edge_emb_size, out_edge_emb_size, msg_emb_size):
@@ -346,12 +362,12 @@ class GraphLearningLayer(nn.Module):
         logits = coo_to_adj(h_e.squeeze(), self.num_features, self.device)
         
         if self.training:
-            relation = gumbel_sigmoid(logits, self.tau, hard= True)
+            relation = gumbel_softmax(logits, self.tau, hard= True)
             # relation = relation.fill_diagonal_(0.)
-            probs = torch.sigmoid(logits)
-            kl_loss = prior_fitting_loss(probs, self.prior_adj)
+            probs = torch.softmax(logits, dim=1)
+            kl_loss = kl_categorical_uniform(probs, self.num_features)
         else: 
-            relation = gumbel_sigmoid(logits, self.tau, hard= True)
+            relation = gumbel_softmax(logits, self.tau, hard= True)
             # relation = relation.fill_diagonal_(0.)
             kl_loss = None
         relation_index = torch.nonzero(relation).T

@@ -25,7 +25,7 @@ from layers.proposed_model import *
 from utils.gnn_utils import get_prior_relation
 from utils.gnn_utils import get_prior_relation_by_tree
 
-from utils.gnn_trainer import Trainer
+from utils.gnn_trainer import Trainer, PreTrainer
 
 parser = argparse.ArgumentParser()
 
@@ -59,7 +59,7 @@ parser.add_argument('--delta', type= float, default=0., help='significant improv
 parser.add_argument('--print_log_option', type= int, default= 10, help= 'print training loss every print_log_option')
 parser.add_argument('--imp_loss_penalty', type= float, default= 1., 
                     help= 'the penalty term of imputation loss')
-parser.add_argument('--kl_loss_penalty', type= float, default= 0.01, 
+parser.add_argument('--kl_loss_penalty', type= float, default= 1.0, 
                     help= 'the penalty term of kl loss')
 parser.add_argument('--T_max', type= int, default= 5, help= 'T_max of consine annealing scheduler')
 
@@ -134,7 +134,7 @@ def main(args):
     if args.auto_set_emb_size:
         n = 2**int(np.ceil(np.log2(args.input_size))-1)
         args.node_emb_size = n 
-        args.edge_emb_size = n
+        args.edge_emb_size = 2
         args.msg_emb_size = n
 
     # obtain prior relation 
@@ -167,6 +167,20 @@ def main(args):
     else:
         print("The model is yet to be implemented.")
         sys.exit()    
+
+    pretrainer = PreTrainer()
+    optimizer = optim.Adam(model.parameters(), args.lr)    
+    early_stopping = EarlyStopping(
+        patience= args.patience,
+        verbose= True,
+        delta = args.delta,
+        path= args.model_path,
+        model_name= 'pretrained_'+args.model_name
+    ) 
+    print('start pretraining...')
+    pretrainer(args, model, train_loader, valid_loader, early_stopping, optimizer, device)
+    print('pretraining done')
+    model.pretraining = False
 
     optimizer = optim.Adam(model.parameters(), args.lr)    
     # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, args.T_max) 
@@ -240,8 +254,8 @@ if __name__ == '__main__':
         for k in perfs.keys():
             perfs[k].append(perf[k])
     perfs_df = pd.DataFrame(perfs)
-    perfs_df = perfs_df.append(perfs_df.mean().to_dict(), ignore_index= True)
-    perfs_df = perfs_df.append(perfs_df.std().to_dict(), ignore_index= True)
+    perfs_df = perfs_df.append(perfs_df.mean(skipna=True).to_dict(), ignore_index= True)
+    perfs_df = perfs_df.append(perfs_df.std(skipna=True).to_dict(), ignore_index= True)
     perfs_df.index = [str(i) for i in range(len(perfs_df)-2)] + ['mean', 'std']
 
     perfs_path = os.path.join(args.test_results_path, f'{args.model_type}/{args.data_type}')

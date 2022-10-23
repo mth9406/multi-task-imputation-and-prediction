@@ -1,6 +1,17 @@
 import numpy as np
+import pandas as pd
 import torch
+from torch.nn import functional as F
+from torch import Tensor
+from typing import Callable, Optional
+import networkx as nx
+from matplotlib import pyplot as plt
+import os
+
 from sklearn.metrics import confusion_matrix, accuracy_score, recall_score, precision_score, f1_score
+from sklearn.metrics import r2_score
+from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import mean_squared_error
 
 def make_missing(x, prob):
     """
@@ -105,3 +116,57 @@ def evaluate(cm, weighted= False):
     f1 = np.sum(f1_*n_samples)/np.sum(n_samples) if weighted else np.mean(f1_)
 
     return acc, rec, prec, f1
+
+def get_perf_num(input: Tensor, target: Tensor):
+    # returns 
+    # r2, mae, mse
+    input = input.detach().cpu().numpy() 
+    target = target.detach().cpu().numpy()  
+    r2 = r2_score(input, target) 
+    mae = mean_absolute_error(input, target) 
+    mse = mean_squared_error(input, target)
+    return {
+        'r2': r2, 
+        'mse': mse,
+        'mae': mae 
+    }
+
+def get_perf_cat(input: Tensor, target: Tensor, num_labels:int):
+    # returns 
+    # acc, precision, recall and f1 score 
+    input = torch.argmax(F.softmax(input, dim=1), dim=1).detach().cpu().numpy()
+    target = target.detach().cpu().numpy()      
+    labels = np.array([np.arange(num_labels)]) 
+    cm = confusion_matrix(target, input, labels= labels)
+    acc, rec, prec, f1 = evaluate(cm)
+    return {
+        'accuracy': acc,
+        'recall': rec, 
+        'precision': prec,
+        'f1_score': f1
+    }  
+
+
+def save_relation_adj(relation_adj, args, additional_info:str= 'posterior'):
+    print('saving a relation graph...')
+    plt.figure(figsize =(30,30))
+    graph_path = os.path.join(args.test_results_path, f'{args.model_type}/{args.data_type}')
+    os.makedirs(graph_path, exist_ok= True)
+    graph_file = os.path.join(graph_path, f'{additional_info}_relation_graph_{args.data_type}_{args.test_missing_prob}.png')
+    relation_adj = pd.DataFrame(relation_adj, columns = args.column_names, index= args.column_names)
+    relation_adj.to_csv(os.path.join(graph_path, f'{additional_info}_graph_{args.data_type}_{args.test_missing_prob}.csv'))
+    options = {
+            'node_color': 'skyblue',
+            'node_size': 3000,
+            'width': 0.5 ,
+            'arrowstyle': '-|>',
+            'arrowsize': 20,
+            'alpha' : 1,
+            'font_size' : 15
+        }
+    G = nx.from_pandas_adjacency(relation_adj, create_using=nx.DiGraph)
+    G = nx.DiGraph(G)
+    pos = nx.kamada_kawai_layout(G)
+    nx.draw_networkx(G, pos=pos, **options)
+    plt.savefig(graph_file, format="PNG")
+    plt.close('all')  

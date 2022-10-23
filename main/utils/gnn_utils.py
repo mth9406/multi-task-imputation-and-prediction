@@ -51,3 +51,24 @@ def get_prior_relation_by_tree(X,
     relation_index = (torch.nonzero(torch.LongTensor(adj_mat)).T).to(device)
 
     return relation_index
+
+def get_prior_adj_by_tree(X, 
+                    numeric_vars_pos:list, cat_vars_pos:list, 
+                    cv:int= 5, 
+                    device= torch.device('cuda' if torch.cuda.is_available() else 'cpu')): 
+
+    n, p = X.shape 
+    adj_mat = np.zeros((p,p))
+
+    for i in range(p): 
+        col_index = np.full((p,), True) 
+        col_index[i] = False
+        if i in numeric_vars_pos:
+            selector = SelectFromModel(estimator=DecisionTreeRegressor()).fit(X[:, col_index], X[:, ~col_index].flatten())
+        else: 
+            selector = SelectFromModel(estimator=DecisionTreeClassifier()).fit(X[:, col_index], X[:, ~col_index].flatten())         
+        adj_mat[i, col_index] = selector.get_support() * 1
+
+    prior_adj = (torch.LongTensor(adj_mat).T).to(device)
+
+    return prior_adj

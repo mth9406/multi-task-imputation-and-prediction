@@ -40,7 +40,7 @@ class Proposed(nn.Module):
         self.gcn_block0 = GCNBlockVer2(num_features, node_emb_size, 1, edge_emb_size, msg_emb_size)
         for i in range(1, num_layers): 
             setattr(self, f'gcn_block{i}', GCNBlockVer2(node_emb_size, node_emb_size, edge_emb_size, edge_emb_size, msg_emb_size))
-        self.gll = AdaptiveGraphLearningLayer(num_features, relation_index, tau=tau)
+        self.gll = AdaptiveGraphLearningLayer(num_features, node_emb_size, node_emb_size//2, relation_index, tau=tau, device= device)
         self.reph = AttentionEdgePredictionHead(node_emb_size, num_features, heads, device)
         self.nph = NodePredictionHead(num_features, num_labels)
 
@@ -65,6 +65,11 @@ class Proposed(nn.Module):
         self.device = device
         self.task_type = task_type
         self.residual_stack = residual_stack
+        self.pretraining = True 
+
+    def pretrain(self): 
+        self.pretraining = True 
+        return 
 
     def forward(self, x):
         edge_index, edge_emb = x['edge_index'], x['edge_value']
@@ -131,14 +136,17 @@ class Proposed(nn.Module):
         # with torch.set_grad_enabled(True)
         out = self.forward(batch)
 
-        if self.task_type == 'regr': 
-            label_loss = self.mse_loss(torch.tanh(out['preds']), batch['y'])
-        elif self.task_type == 'cls' and self.num_labels == 1: 
-            label_loss = self.bce_loss(torch.sigmoid(out['preds']), batch['y'])
-        else: 
-            label_loss = self.cls_loss(out['preds'], batch['y'])
-        
-        total_loss = label_loss
+        if self.pretraining:
+            label_loss = float('nan')
+            total_loss = 0.
+        else:
+            if self.task_type == 'regr': 
+                label_loss = self.mse_loss(torch.tanh(out['preds']), batch['y'])
+            elif self.task_type == 'cls' and self.num_labels == 1: 
+                label_loss = self.bce_loss(torch.sigmoid(out['preds']), batch['y'])
+            else: 
+                label_loss = self.cls_loss(out['preds'], batch['y'])
+            total_loss = label_loss
         
         if len(self.cat_vars_pos) > 0:
             cat_imp_loss = self.bce_loss(torch.sigmoid(out['x_imputed'][:, self.cat_vars_pos]), batch['x_complete'][:, self.cat_vars_pos])
@@ -173,14 +181,17 @@ class Proposed(nn.Module):
         # with torch.no_grad()
         out = self.forward(batch)
 
-        if self.task_type == 'regr': 
-            label_loss = self.mse_loss(torch.tanh(out['preds']), batch['y'])
-        elif self.task_type == 'cls' and self.num_labels == 1: 
-            label_loss = self.bce_loss(torch.sigmoid(out['preds']), batch['y'])
-        else: 
-            label_loss = self.cls_loss(out['preds'], batch['y'])
-        
-        total_loss = label_loss
+        if self.pretraining:
+            label_loss = float('nan')
+            total_loss = 0.
+        else:
+            if self.task_type == 'regr': 
+                label_loss = self.mse_loss(torch.tanh(out['preds']), batch['y'])
+            elif self.task_type == 'cls' and self.num_labels == 1: 
+                label_loss = self.bce_loss(torch.sigmoid(out['preds']), batch['y'])
+            else: 
+                label_loss = self.cls_loss(out['preds'], batch['y'])
+            total_loss = label_loss
         
         if len(self.cat_vars_pos) > 0:
             cat_imp_loss = self.bce_loss(torch.sigmoid(out['x_imputed'][:, self.cat_vars_pos]), batch['x_complete'][:, self.cat_vars_pos])
@@ -216,14 +227,17 @@ class Proposed(nn.Module):
         # and test performance measures
         out = self.forward(batch)
 
-        if self.task_type == 'regr': 
-            label_loss = self.mse_loss(torch.tanh(out['preds']), batch['y'])
-        elif self.task_type == 'cls' and self.num_labels == 1: 
-            label_loss = self.bce_loss(torch.sigmoid(out['preds']), batch['y'])
-        else: 
-            label_loss = self.cls_loss(out['preds'], batch['y'])
-        
-        total_loss = label_loss
+        if self.pretraining:
+            label_loss = float('nan')
+            total_loss = 0.
+        else:
+            if self.task_type == 'regr': 
+                label_loss = self.mse_loss(torch.tanh(out['preds']), batch['y'])
+            elif self.task_type == 'cls' and self.num_labels == 1: 
+                label_loss = self.bce_loss(torch.sigmoid(out['preds']), batch['y'])
+            else: 
+                label_loss = self.cls_loss(out['preds'], batch['y'])
+            total_loss = label_loss
         
         if len(self.numeric_vars_pos) > 0:
             num_imp_loss = self.mse_loss(torch.tanh(out['x_imputed'][:, self.numeric_vars_pos]), batch['x_complete'][:, self.numeric_vars_pos])

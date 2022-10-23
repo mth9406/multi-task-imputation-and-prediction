@@ -175,8 +175,8 @@ def main(args):
     
     # define training, validation, test datasets and their dataloaders respectively 
     train_data, valid_data, test_data \
-        = TableDataset(X_train_tilde, M_train, y_train, X_comp= X_train),\
-            TableDataset(X_valid_tilde, M_valid, y_valid, X_comp= X_valid),\
+        = TableDataset(X_train, M_train, y_train, X_comp= X_train),\
+            TableDataset(X_valid, M_valid, y_valid, X_comp= X_valid),\
             TableDataset(X_test_tilde, M_test, y_test, X_comp= X_test)
     train_loader, valid_loader, test_loader \
         = DataLoader(train_data, batch_size = args.batch_size, shuffle = True),\
@@ -223,8 +223,8 @@ if __name__ == '__main__':
                 perfs[k].append(perf[k])
         
         perfs_df = pd.DataFrame(perfs) 
-        perfs_df = perfs_df.append(perfs_df.mean().to_dict(), ignore_index= True)
-        perfs_df = perfs_df.append(perfs_df.std().to_dict(), ignore_index= True)
+        perfs_df = perfs_df.append(perfs_df.mean(skipna=True).to_dict(), ignore_index= True)
+        perfs_df = perfs_df.append(perfs_df.std(skipna=True).to_dict(), ignore_index= True)
         perfs_df.index = [str(i) for i in range(len(perfs_df)-2)] + ['mean', 'std']
 
         perfs_path = os.path.join(args.test_results_path, f'{args.data_type}')

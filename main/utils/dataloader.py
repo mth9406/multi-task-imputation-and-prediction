@@ -4,6 +4,8 @@ from utils.dataloader import *
 from utils.torch_utils import *
 from utils.utils import *
 
+from sklearn.datasets import load_breast_cancer, load_boston, load_diabetes, load_digits
+
 import numpy as np
 import pandas as pd 
 import os
@@ -42,6 +44,28 @@ class TableDataset(Dataset):
 
     def __len__(self):
         return len(self.X)
+
+class TableDatasetVer2(Dataset):
+    r"""
+    Table dataset
+
+    # Parameters
+    y: independent variable (target variable: long or float type)
+    X_comp: complete matrix of X (true label of input)
+    """ 
+    def __init__(self, x_complete, y):
+        super().__init__()
+        self.x_comp = x_complete
+        self.y = y 
+        
+    def __getitem__(self, index):
+        return {
+            'complete_input': self.x_comp[index],
+            'label': self.y[index]
+        }        
+
+    def __len__(self):
+        return len(self.x_comp)
 
 class BipartiteData(Dataset): 
     r"""
@@ -186,7 +210,7 @@ def train_valid_test_split(args, X, y, task_type= "cls"):
         X_valid_tilde, _ = make_missing(X_valid, args.prob)
 
     if args.test_all_missing:
-        # args.test_n_missing = int(np.ceil(p * args.test_missing_prob))
+        args.test_n_missing = int(np.ceil(p * args.test_missing_prob))
         X_test_tilde, _ = make_missing_by_row(X_test, args.test_n_missing)
     else:
         X_test_tilde, _ = make_missing(X_test, args.test_missing_prob)
@@ -366,12 +390,10 @@ def load_wine(args):
     data = pd.read_csv(data_file)
     data = data.dropna(axis= 0)
     X, y = data.iloc[:, :-2], data.iloc[:, -2]
-    y.loc[y <= 5] = 0
-    y.loc[y==6] = 1
-    y.loc[(y == 7)|(y==8)] = 2
+    y = y-3
     args.input_size = X.shape[1] 
     args.cat_vars_pos = []
-    args.n_labels = 3
+    args.n_labels = len(y.unique())
     args.task_type = 'cls'
     print(data.info())
     print('-'*20)
@@ -931,6 +953,70 @@ def load_insurance(args):
 
     return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
 
+def load_cancer(args): 
+    loaded = load_breast_cancer()
+    x, y = loaded.data, loaded.target
+    data = np.concatenate([x,y[:, np.newaxis]], axis= 1)
+    df = pd.DataFrame(data, columns= list(loaded.feature_names)+['target'])
+
+    x = df.iloc[:, :-1]
+    y = df.iloc[:, -1] *1.
+
+    df = df.dropna()
+    args.cat_vars_pos = []
+    args.input_size = x.shape[1]
+    args.n_labels= len(df.iloc[:, -1].unique())
+
+    print(df.info())
+    print('-'*20)
+    X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
+        = train_valid_test_split(args, x, y, task_type= 'cls')
+
+    return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
+
+def load_diabetes_2(args): 
+    loaded = load_diabetes()
+    x, y = loaded.data, loaded.target
+    data = np.concatenate([x,y[:, np.newaxis]], axis= 1)
+    df = pd.DataFrame(data, columns= list(loaded.feature_names)+['target'])
+    
+    x = df.iloc[:, :-1]
+    y = df.iloc[:, -1]
+
+    df = df.dropna()
+    args.cat_vars_pos = []
+    args.input_size = x.shape[1]
+    args.n_labels= 1
+
+    print(df.info())
+    print('-'*20)
+    X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
+        = train_valid_test_split(args, x, y, task_type= 'regr')
+
+    return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
+
+def load_digits_2(args): 
+    loaded = load_digits()
+    x, y = loaded.data, loaded.target
+    data = np.concatenate([x,y[:, np.newaxis]], axis= 1)
+    df = pd.DataFrame(data, columns= list(loaded.feature_names)+['target'])
+    
+    x = df.iloc[:, :-1]
+    y = df.iloc[:, -1] *1.
+
+    df = df.dropna()
+    args.cat_vars_pos = []
+    args.input_size = x.shape[1]
+    args.n_labels= len(df.iloc[:, -1].unique())
+
+    print(df.info())
+    print('-'*20)
+    X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde \
+        = train_valid_test_split(args, x, y, task_type= 'cls')
+
+    return X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde
+
+
 def load_data(args): 
 
     print("Loading data...")
@@ -1033,6 +1119,18 @@ def load_data(args):
         X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde\
             = load_insurance(args)        
         task_type= 'regr'         
+    elif args.data_type == 'cancer': 
+        X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde\
+            = load_cancer(args)        
+        task_type= 'cls'  
+    elif args.data_type == 'diabetes': 
+        X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde\
+            = load_diabetes_2(args)        
+        task_type= 'regr'  
+    elif args.data_type == 'digits': 
+        X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde\
+            = load_digits_2(args)        
+        task_type= 'cls'  
     else: 
         print("Unkown data type, data type should be one of the followings...")
         print("gesture, elec, wind, mobile, wine, appliances, pulsar, faults, abalone, spam, letter")

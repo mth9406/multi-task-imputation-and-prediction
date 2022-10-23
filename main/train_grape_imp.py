@@ -18,6 +18,8 @@ from utils.dataloader import *
 from utils.utils import *
 from layers.gnn_models import *
 from layers.gnn_layers import *
+from layers.models import LinearModel
+from utils.train import *
 
 from utils.gnn_trainer import Trainer
 
@@ -70,7 +72,10 @@ parser.add_argument('--msg_emb_size', type= int, default= 64,
 parser.add_argument('--edge_drop_p', type= float, default= 0.3,
                     help= 'dropout ratio (default= 0.3)')
 parser.add_argument('--residual_stack', action= 'store_true', default= False)
-
+parser.add_argument('--stack_fc_lyrs', action= 'store_true',
+                    help= 'fc_out layer will have 2 Linear layers if it is set true.')
+parser.add_argument('--drop_p', type= float, default= 0.2,
+                    help= 'dropout ratio (default= 0.2)')
 # To test
 parser.add_argument('--test', action='store_true', help='test')
 parser.add_argument('--model_file', type= str, default= 'latest_checkpoint.pth.tar'
@@ -84,6 +89,8 @@ parser.add_argument('--num_folds', type= int, default= 1,
                     help = 'the number of folds')
 parser.add_argument('--test_results_path', type= str, default= './test_results', 
                     help= 'a path to save the results')
+parser.add_argument('--vai_n_samples', type=int, default= 1, 
+                    help= 'dummy')
 
 args = parser.parse_args()
 print(args)
@@ -109,6 +116,9 @@ def main(args):
     # load data
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde, task_type \
         = load_data(args)
+
+    # find masks
+    M_train, M_valid, M_test = make_mask(X_train_tilde), make_mask(X_valid_tilde), make_mask(X_test_tilde)
     # define training, validation, test datasets and their dataloaders respectively 
     train_data, valid_data, test_data \
         = BipartiteData(X_train_tilde, X_train, y_train),\
@@ -123,12 +133,12 @@ def main(args):
     if args.auto_set_emb_size:
         n = 2**int(np.ceil(np.log2(args.input_size))-1)
         args.node_emb_size = n 
-        args.edge_emb_size = 2
+        args.edge_emb_size = n
         args.msg_emb_size = n
 
     # model
     # input_size(=num_features), num_labels(n_labels), cat_vars_pos, numeric_vars_pos are obtaiend after loading the data
-    if args.model_type == 'grape':
+    if args.model_type == 'grape_tp':
         model = Grape(
             args.input_size, 
             args.n_labels,
@@ -150,7 +160,8 @@ def main(args):
         sys.exit()    
     print('Model config')
     print(f'task type: {model.task_type}')
-
+    # args.model_type = 'grape_imp'
+    model.imp_only = True
     optimizer = optim.Adam(model.parameters(), args.lr, weight_decay= 0.01)    
     # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max = args.T_max) 
     early_stopping = EarlyStopping(
@@ -170,22 +181,62 @@ def main(args):
         model.load_state_dict(ckpt['state_dict'])
         print('loading done!')
     else: 
-        print('start training...')
+        print('start pre-training...')
         # trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, scheduler, device)
         trainer(args, model, train_loader, valid_loader, early_stopping, optimizer, device)
     
     print("==============================================")
-    print("Testing the model...")  
-    print('loading the saved model')
-    model_file = os.path.join(args.model_path, args.model_name)
-    ckpt = torch.load(model_file)
-    model.load_state_dict(ckpt['state_dict'])
-    print('loading done!')   
-    perfs = trainer.test(args, model, test_loader, device)
-    for k, perf in perfs.items(): 
-        print(f'{k}: {perf:.4f}')
+    print("training the linear model after the imputation...")
+    linear_model = LinearModel(args.input_size, args.n_labels, args.drop_p, args.stack_fc_lyrs).to(device)
+    
+    model.eval()  
+    inputs_test = next(iter(test_loader))
+    for key, value in inputs_test.items(): 
+        inputs_test[key] = value.to(device)
+    with torch.no_grad():
+        X_test_tilde = model.forward(inputs_test)['x_impted_adj']
+    assert torch.isnan(X_test_tilde).sum() == 0, 'Imputation failed'
+
+    # define training, validation, test datasets and their dataloaders respectively 
+    train_data, valid_data, test_data \
+        = TableDataset(X_train, M_train, y_train, X_comp= X_train),\
+            TableDataset(X_valid, M_valid, y_valid, X_comp= X_valid),\
+            TableDataset(X_test_tilde, M_test, y_test, X_comp= X_test)
+    train_loader, valid_loader, test_loader \
+        = DataLoader(train_data, batch_size = args.batch_size, shuffle = True),\
+            DataLoader(valid_data, batch_size = args.batch_size, shuffle = True),\
+            DataLoader(test_data, batch_size = args.batch_size, shuffle = False)
+
+    optimizer = optim.Adam(linear_model.parameters(), args.lr)    
+    early_stopping = EarlyStopping(
+        patience= args.patience,
+        verbose= True,
+        delta = args.delta,
+        path= args.model_path,
+        model_name= 'linear_model_'+args.model_name
+    ) 
+    # setting training args...
+    if args.task_type == 'regr': 
+        criterion = nn.MSELoss()
+    elif args.task_type == 'cls' and args.n_labels > 1: 
+        criterion = nn.CrossEntropyLoss()
+    else: 
+        criterion = nn.BCELoss()
+    train(args, linear_model, train_loader, valid_loader, optimizer, criterion, early_stopping, device)
         
-    return perfs
+    print("==============================================")
+    print("Testing the linear model...")
+    print('loading the saved model')
+    model_file = os.path.join(args.model_path, 'linear_model_'+args.model_name)
+    ckpt = torch.load(model_file)
+    linear_model.load_state_dict(ckpt['state_dict'])
+    print('loading done!')  
+    if task_type == 'cls': 
+        perf_task = test_cls(args, linear_model, test_loader, criterion, device)
+    else: 
+        perf_task = test_regr(args, linear_model, test_loader, criterion, device)
+   
+    return perf_task 
 
 if __name__ == '__main__': 
     perf = main(args)
