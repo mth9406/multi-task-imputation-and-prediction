@@ -21,12 +21,10 @@ from utils.dataloader import *
 from utils.utils import *
 
 from layers.graph_imputer import *
+from ablation_model.ablation_graph_imputer import *
 from trainer.gi_trainer import GraphImputerTrainer
 from trainer.graph_sampler_trainer import GraphSamplerTrainer
 from fancyimpute import SoftImpute
-from sklearn.impute import SimpleImputer
-from sklearn.experimental import enable_iterative_imputer
-from sklearn.impute import IterativeImputer
 
 from utils.gnn_utils import get_prior_adj_by_tree
 from utils.utils import save_relation_adj
@@ -79,8 +77,6 @@ parser.add_argument('--alpha', type= float, default= 3.,
                     help= 'activation scale in the graph sampling layer')
 parser.add_argument('--model_type', type= str, default= 'graph_imputer', 
                     help= 'graph_imputer')
-parser.add_argument('--init_imp_strategy', type= str, default= 'soft_impute',
-                    help= 'one of soft_impute, mean, mice (default= soft=impute)')
 
 # test options
 parser.add_argument('--test', action='store_true', help='test')
@@ -134,24 +130,10 @@ def main(args):
     
     prior_adj = get_prior_adj_by_tree(X_train.numpy(), args.numeric_vars_pos, args.cat_vars_pos, device= device)
 
-    # initial imputation strategy 
-    # soft_impute, mean, mice
-    if args.init_imp_strategy == 'soft_impute':
-        init_impute = SoftImpute(verbose= False)
-    elif args.init_imp_strategy == 'mean' or args.init_imp_strategy == 'median' or args.init_imp_strategy == 'constant': 
-        init_impute = SimpleImputer(strategy=f'{args.init_imp_strategy}', verbose=False)
-    elif args.init_imp_strategy == 'mice': 
-        init_impute = IterativeImputer(random_state=0, verbose= False, max_iter= 100)
-    else: 
-        print(f'the initial imputation strategy: {args.init_imp_strategy} is not implemented yet')
-        print('using soft-impute as the initial imputation strategy...')
-        args.init_imp_strategy = 'soft_impute'
-        init_impute = SoftImpute(verbose= False)
-        
     if args.model_type == 'graph_imputer': 
-        model = GraphImputer(args.input_size, args.graph_emb_dim,
+        model = PriorGraphImputer(args.input_size, args.graph_emb_dim,
                             args.n_labels, args.cat_vars_pos, args.numeric_vars_pos, args.num_layers, args.alpha,
-                            args.imp_loss_penalty, args.reg_loss_peanlty,prior_adj, device, args.task_type, init_impute
+                            args.imp_loss_penalty, args.reg_loss_peanlty,prior_adj, device, args.task_type
                             ).to(device)
     else: 
         print('The model is yet to be implemented')
@@ -177,9 +159,9 @@ def main(args):
         model.load_state_dict(ckpt['state_dict'])
         print('loading done!')
     else: 
-        print('start pretraining graph...')
-        trainer.pretrain_graph(args, model, optimizer, device)
-        print('pretraining done')
+        # print('start pretraining graph...')
+        # trainer.pretrain_graph(args, model, optimizer, device)
+        # print('pretraining done')
 
         print('start pretraining downstream task...')
         trainer.pretrain_task(args, model, train_loader, valid_loader, optimizer, device)
@@ -219,7 +201,7 @@ if __name__ == '__main__':
     perfs_df = perfs_df.append(perfs_df.std(skipna=True).to_dict(), ignore_index= True)
     perfs_df.index = [str(i) for i in range(len(perfs_df)-2)] + ['mean', 'std']
 
-    perfs_path = os.path.join(args.test_results_path, f'{args.model_type}_{args.init_imp_strategy}/{args.data_type}')
+    perfs_path = os.path.join(args.test_results_path, f'{args.model_type}/{args.data_type}')
     os.makedirs(perfs_path, exist_ok= True)
     pefs_df_file = os.path.join(perfs_path, f'{args.exp_num}_{args.model_type}_missing_{args.test_missing_prob}.csv')
     perfs_df.to_csv(pefs_df_file)

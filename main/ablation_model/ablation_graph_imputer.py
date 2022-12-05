@@ -1,122 +1,19 @@
+from layers.graph_imputer import * 
 import torch 
 from torch import nn
-from torch.nn import functional as F
-from utils.utils import get_perf_cat, get_perf_num
-from fancyimpute import SoftImpute
+from torch.nn import functional as F  
 
-class GraphSamplingLayer(nn.Module): 
-    r"""Graph Sampling Layer 
-    return (directed) logits
-    """
-    def __init__(self, num_features:int, embedding_dim:int, alpha:float, prior_adj, device= torch.device('cuda' if torch.cuda.is_available() else 'cpu')): 
-        super().__init__() 
-        self.emb1 = nn.Embedding(num_features, embedding_dim)
-        self.theta1 = nn.Linear(embedding_dim, embedding_dim, bias=False)
-        self.emb2 = nn.Embedding(num_features, embedding_dim)
-        self.theta2 = nn.Linear(embedding_dim, embedding_dim, bias= False)
-        
-        self.alpha = alpha
-        self.prior_adj = prior_adj.to(device)
-        self.device = device 
-        self.criterion = nn.BCELoss()
+class PriorGraphLayer(nn.Module):
+
+    def __init__(self, prior_adj, device= torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+        self.prior_adj = (prior_adj*1.).to(device)
+        self.device = device
+        super().__init__()
 
     def forward(self): 
-        emb1 = self.emb1.weight
-        emb2 = self.emb2.weight
-        emb1 = self.alpha*torch.tanh(self.theta1(emb1))
-        emb2 = self.alpha*torch.tanh(self.theta2(emb2))
-        logits = emb1@emb2.T
-        return logits
+        return self.prior_adj
 
-    def train_step(self): 
-        logits = self.forward()
-        probs = torch.sigmoid(logits)
-        loss = self.criterion(probs, self.prior_adj*1.) 
-        return {
-            'total_loss':loss
-        } 
-
-    @torch.no_grad()
-    def val_step(self): 
-        logits = self.forward()
-        probs = torch.sigmoid(logits)
-        loss = self.criterion(probs, self.prior_adj*1.) 
-        return {
-            'total_loss':loss
-        } 
-
-    @torch.no_grad()
-    def test_step(self): 
-        logits = self.forward()
-        probs = torch.sigmoid(logits)
-        loss = self.criterion(probs, self.prior_adj*1.) 
-        return {
-            'total_loss':loss
-        } 
-
-class GraphConvolutionLayer(nn.Module): 
-
-    def __init__(self, in_features:int, act_func = None):
-        super().__init__() 
-        self.w = nn.Parameter(torch.randn((in_features, in_features), requires_grad= True))
-        self.b = nn.Parameter(torch.zeros((in_features, ), requires_grad = True))
-        self.act_func = act_func
-
-        self.init_params()
-
-    def init_params(self): 
-        nn.init.xavier_normal_(self.w)
-
-    def forward(self, x, adj_mat): 
-        res = x 
-        x = (x@self.w + self.b)@adj_mat
-        if self.act_func is None:
-            return res + x
-        else: 
-            return self.act_func(res+x)
-
-class PredictionHead(nn.Module): 
-
-    def __init__(self, in_features:int, out_features:int, numeric_vars_pos:list, cat_vars_pos:list, task_type:str): 
-        super().__init__() 
-        self.w = nn.Parameter(torch.randn((in_features, out_features), requires_grad= True))
-        self.b = nn.Parameter(torch.zeros((out_features, ), requires_grad = True))
-
-        self.init_params()
-
-        self.numeric_vars_pos = numeric_vars_pos
-        self.cat_vars_pos = cat_vars_pos
-        self.vars_pos = numeric_vars_pos + cat_vars_pos
-        self.task_type = task_type
-
-    def init_params(self): 
-        nn.init.xavier_normal_(self.w)
-    
-    def forward(self, x, adj_mat= None): 
-        if adj_mat is None: 
-            return x[:, self.vars_pos]@self.w + self.b
-        else: 
-            return x[:, self.vars_pos]@(self.w*adj_mat) + self.b
-    
-    def train_step(self, batch): 
-        batch_x, batch_mask = batch.get('complete_input'), batch.get('mask')
-        y_hat = self.forward(batch_x)
-        prediction_loss = F.mse_loss(y_hat.ravel(), batch.get('label')) if self.task_type == 'regr' else F.cross_entropy(y_hat, batch.get('label'))
-        return {
-            'total_loss': prediction_loss
-        }
-
-    @torch.no_grad()
-    def val_step(self, batch): 
-        batch_x, batch_mask = batch.get('complete_input'), batch.get('mask')
-        y_hat = self.forward(batch_x)
-        prediction_loss = F.mse_loss(y_hat.ravel(), batch.get('label')) if self.task_type == 'regr' else F.cross_entropy(y_hat, batch.get('label'))
-        return {
-            'total_loss': prediction_loss
-        }
-
-# Proposed model 
-class GraphImputer(nn.Module):
+class PriorGraphImputer(nn.Module):
     def __init__(self, 
                 num_features:int,
                 graph_emb_dim:int, 
@@ -129,8 +26,7 @@ class GraphImputer(nn.Module):
                 reg_loss_peanlty:float = 0.1,
                 prior_adj = None, 
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
-                task_type: str = 'cls',
-                init_impute = None
+                task_type: str = 'cls'
                 ):
         super().__init__() 
 
@@ -138,7 +34,7 @@ class GraphImputer(nn.Module):
         # graph sampling layer
         if prior_adj is None: 
             prior_adj = torch.ones((num_features, num_features), device= device)
-        self.graph_sampling = GraphSamplingLayer(num_features, graph_emb_dim, alpha, prior_adj, device)
+        self.graph_sampling = PriorGraphLayer(prior_adj, device)
         
         # GraphAutoEncoder layer
         for i in range(num_layers-1):
@@ -167,22 +63,19 @@ class GraphImputer(nn.Module):
         self.num_layers = num_layers 
         self.imp_loss_penalty = imp_loss_penalty 
         self.reg_loss_peanlty = reg_loss_peanlty
-
-        if init_impute is None:
-            self.init_impute = SoftImpute(verbose= False)
-        else: 
-            self.init_impute = init_impute
+    
+        self.soft_impute = SoftImpute(verbose= False)
 
     # batch {input, mask, label, complete_input}
     # input, mask = make_mask(complete_input)
     def forward(self, batch):
         # inputs
         batch_x, batch_mask = batch.get('input'), batch.get('mask')
-        batch_x = torch.FloatTensor(self.init_impute.fit_transform(batch_x.detach().cpu())).to(self.device)
+        batch_x = torch.FloatTensor(self.soft_impute.fit_transform(batch_x.detach().cpu())).to(self.device)
 
         # graph sampling and making an adjacency matrix
-        logits = self.graph_sampling() # num_features x num_features 
-        adj_mat = torch.sigmoid(logits)
+        adj_mat = self.graph_sampling() # num_features x num_features 
+        # adj_mat = torch.sigmoid(logits)
         adj_mat_norm = self.norm_adj(adj_mat)
         
         for i in range(self.num_layers-1):
@@ -201,14 +94,9 @@ class GraphImputer(nn.Module):
         elif batch_x_recon_num is not None and batch_x_recon_cat is None: 
             batch_x_hat = batch_x_recon_num
 
-        if self.training:
-            y_hat = self.prediction_head(batch.get('complete_input')[:, self.numeric_vars_pos + self.cat_vars_pos]) 
-            if self.task_type == 'regr': 
-                y_hat = y_hat.ravel()
-        else: 
-            y_hat = self.prediction_head(batch_x_hat) 
-            if self.task_type == 'regr': 
-                y_hat = y_hat.ravel()            
+        y_hat = self.prediction_head(batch.get('complete_input')[:, self.numeric_vars_pos + self.cat_vars_pos]) 
+        if self.task_type == 'regr': 
+            y_hat = y_hat.ravel()
         
         return {
             'x_recon_num': batch_x_recon_num,
@@ -220,9 +108,9 @@ class GraphImputer(nn.Module):
     
     @torch.no_grad()
     def get_adj(self): 
-        logits = self.graph_sampling()
-        adj_mat = torch.sigmoid(logits) 
-        adj_mat = (adj_mat > 0.5) * 1. 
+        adj_mat = self.graph_sampling()
+        # adj_mat = torch.sigmoid(logits) 
+        # adj_mat = (adj_mat > 0.5) * 1. 
         return adj_mat.detach().cpu().numpy()
 
     def train_step(self, batch): 
@@ -241,13 +129,13 @@ class GraphImputer(nn.Module):
         prediction_loss = self.mse_loss(out.get('y_hat').ravel(), batch.get('label')) if self.task_type == 'regr' else self.cls_loss(out.get('y_hat'), batch.get('label'))
         
         # regularization loss 
-        regularization_loss =  self.bce_loss(out['adj_mat'], self.prior_adj*1.) 
+        regularization_loss = None
 
         return {
             'num_imp_loss': num_imp_loss,
             'cat_imp_loss': cat_imp_loss,
             'prediction_loss': prediction_loss,
-            'regularization_loss': regularization_loss
+            'regularization_loss': None
         } 
 
     @torch.no_grad()
@@ -264,7 +152,7 @@ class GraphImputer(nn.Module):
         prediction_loss = self.mse_loss(out.get('y_hat').ravel(), batch.get('label')) if self.task_type == 'regr' else self.cls_loss(out.get('y_hat'), batch.get('label'))
 
         # regularization loss 
-        regularization_loss =  self.bce_loss(out['adj_mat'], self.prior_adj*1.) 
+        regularization_loss = None 
 
         # perf measure 
         perfs = get_perf_num(out.get('y_hat').ravel(), batch.get('label')) if self.task_type == 'regr'\
@@ -292,7 +180,7 @@ class GraphImputer(nn.Module):
             else self.cls_loss(out.get('y_hat'), batch.get('label')).detach().cpu().item()
 
         # regularization loss 
-        regularization_loss =  self.bce_loss(out['adj_mat'], self.prior_adj*1.).detach().cpu().item()
+        regularization_loss = float('nan')
         # perf measure 
         perfs = get_perf_num(out.get('y_hat').ravel(), batch.get('label')) if self.task_type == 'regr'\
                                  else get_perf_cat(out.get('y_hat'), batch.get('label'), self.num_labels)

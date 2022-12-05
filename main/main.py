@@ -20,6 +20,9 @@ from utils.utils import *
 
 from sklearn.utils.class_weight import compute_class_weight
 from fancyimpute import SoftImpute
+from sklearn.impute import SimpleImputer
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import IterativeImputer
 
 parser = argparse.ArgumentParser()
 # Data path
@@ -70,7 +73,7 @@ parser.add_argument('--stack_ae_lyrs', action= 'store_true',
 parser.add_argument('--stack_fc_lyrs', action= 'store_true',
                     help= 'fc_out layer will have 2 Linear layers if it is set true.')
 parser.add_argument('--imp_strategy', type= str, default= 'soft_impute', 
-                    help= 'imputation strategy: \'soft_impute\', \'vai\', \'ai\' ')
+                    help= 'imputation strategy: \'soft_impute\', \'vai\', \'ai\'')
 parser.add_argument('--imp_model', type= str, default= None , 
                     help = '(variational) auto encoder file')
 
@@ -116,13 +119,22 @@ def main(args):
     X_train, X_valid, X_test, y_train, y_valid, y_test, X_train_tilde, X_valid_tilde, X_test_tilde, task_type \
         = load_data(args)
     # find masks
-    M_train, M_valid, M_test = make_mask(X_train_tilde), make_mask(X_valid_tilde), make_mask(X_test_tilde)
-    X_train_tilde = torch.FloatTensor(SoftImpute(verbose= False).fit_transform(X_train_tilde))
-    X_valid_tilde = torch.FloatTensor(SoftImpute(verbose= False).fit_transform(X_valid_tilde))
-    X_test_tilde = torch.FloatTensor(SoftImpute(verbose= False).fit_transform(X_test_tilde))    
+    M_train, M_valid, M_test = make_mask(X_train_tilde), make_mask(X_valid_tilde), make_mask(X_test_tilde) 
     if args.imp_strategy == 'soft_impute':
+        X_train_tilde = torch.FloatTensor(SoftImpute(verbose= False).fit_transform(X_train_tilde))
+        X_valid_tilde = torch.FloatTensor(SoftImpute(verbose= False).fit_transform(X_valid_tilde))
+        X_test_tilde = torch.FloatTensor(SoftImpute(verbose= False).fit_transform(X_test_tilde))   
         print('soft-impute') 
-    elif args.imp_strategy == 'vai' and args.imp_model is not None:
+    elif args.imp_strategy == 'mean' or args.imp_strategy == 'median' or args.imp_strategy == 'constant':
+        X_train_tilde = torch.FloatTensor(SimpleImputer(strategy=f'{args.imp_strategy}', verbose=False).fit_transform(X_train_tilde))
+        X_valid_tilde = torch.FloatTensor(SimpleImputer(strategy=f'{args.imp_strategy}', verbose=False).fit_transform(X_valid_tilde))
+        X_test_tilde = torch.FloatTensor(SimpleImputer(strategy=f'{args.imp_strategy}', verbose=False).fit_transform(X_test_tilde))     
+    elif args.imp_strategy == 'mice': 
+        X_train_tilde = torch.FloatTensor(IterativeImputer(verbose= False).fit_transform(X_train_tilde))
+        X_valid_tilde = torch.FloatTensor(IterativeImputer(verbose= False).fit_transform(X_valid_tilde))
+        X_test_tilde = torch.FloatTensor(IterativeImputer(verbose= False).fit_transform(X_test_tilde))   
+
+    if args.imp_strategy == 'vai' and args.imp_model is not None:
         print("variational auto-encoder")
         vae =  VariationalAutoEncoder(args.input_size, args.drop_p, stack_fc_lyrs=args.stack_fc_lyrs, stack_ae_lyrs= args.stack_ae_lyrs).to(device)
         ckpt = torch.load(args.imp_model)
